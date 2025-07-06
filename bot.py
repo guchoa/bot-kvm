@@ -1,3 +1,4 @@
+import os
 from keep_alive import keep_alive
 
 import discord
@@ -45,7 +46,7 @@ class GrupoView(discord.ui.View):
             button = discord.ui.Button(
                 label=classe.capitalize(),
                 emoji=emoji,
-                style=discord.ButtonStyle.secondary,  # Botões cinzas
+                style=discord.ButtonStyle.secondary,
                 custom_id=classe
             )
             button.callback = self.gerar_callback(classe)
@@ -62,17 +63,14 @@ class GrupoView(discord.ui.View):
                 await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Remove se já estava na lista
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
-            # Adiciona nova entrada
             grupo['jogadores'].append({
                 'id': user.id,
                 'nome': nome,
                 'classe': classe
             })
 
-            # Recria o corpo da mensagem
             linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
             descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
 
@@ -100,9 +98,8 @@ async def criar_grupo(ctx, numero: int):
 
     view = GrupoView(grupo_numero=numero)
     mensagem = await ctx.send(embed=embed, view=view)
-    view.mensagem = mensagem  # associar a mensagem real à View
+    view.mensagem = mensagem
 
-    # Registrar grupo
     grupos_ativos[mensagem.id] = {
         'grupo': numero,
         'jogadores': []
@@ -111,5 +108,13 @@ async def criar_grupo(ctx, numero: int):
 @bot.event
 async def on_ready():
     print(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+
 keep_alive()
-bot.run('MTM5MDc2NDc0MzUzMDExOTQxMA.GQZiOz.aZN8Goo3edK_O2V80pVWJ-Hf1PyPwasnimsxyE')
+
+# Aqui pegamos o token da variável de ambiente
+TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+if not TOKEN:
+    print("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
+    exit(1)
+
+bot.run(TOKEN)
