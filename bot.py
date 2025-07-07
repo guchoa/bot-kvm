@@ -26,8 +26,8 @@ CLASSES_EMOJIS = {
     'templario': '🟥',
     'bruxo': '🔸',
     'sabio': '🟦',
-    'ferreiro': discord.PartialEmoji(name="bolinha_ciano", id=1391809479112265859),
-    'alquimista': discord.PartialEmoji(name="quadrado_ciano", id=1391809524343767161),
+    'ferreiro': discord.PartialEmoji(name="bolinha_ciano", id=1391817828415443099),
+    'alquimista': discord.PartialEmoji(name="quadrado_ciano", id=1391817845364494507),
     'assassino': '🟣',
     'arruaceiro': '🟪'
 }
