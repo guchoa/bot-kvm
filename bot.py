@@ -209,17 +209,19 @@ async def garantir_cargo_bot(guild):
     if not cargo:
         logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
         try:
+            permissions = discord.Permissions(
+                manage_roles=True,
+                manage_messages=True,
+                view_channel=True,
+                send_messages=True,
+                add_reactions=True,
+                read_message_history=True,
+                use_application_commands=True,
+                embed_links=True
+            )
             cargo = await guild.create_role(
                 name=nome_cargo,
-                permissions=discord.Permissions(
-                    read_messages=True,
-                    send_messages=True,
-                    add_reactions=True,
-                    use_application_commands=True,
-                    embed_links=True,
-                    read_message_history=True,
-                    manage_messages=True
-                ),
+                permissions=permissions,
                 color=discord.Color.teal(),
                 mentionable=False,
                 reason="Cargo padrão para o bot com permissões do evento PvP"
