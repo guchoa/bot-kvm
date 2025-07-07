@@ -1,10 +1,10 @@
 import os
+import logging
 from keep_alive import keep_alive
 
 import discord
 from discord.ext import commands
 import asyncio
-import logging
 
 logging.basicConfig(level=logging.INFO)
 
@@ -72,7 +72,7 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        # Permitir que qualquer um saia a qualquer momento
+        # Quem pode usar o que:
         if custom_id == "sair":
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
             linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
@@ -82,7 +82,6 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
             return False
 
-        # Demais ações só para o criador do grupo
         if grupo['criador_id'] != user_id:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
             return False
@@ -118,21 +117,18 @@ class GrupoView(discord.ui.View):
 
     def gerar_callback(self, classe):
         async def callback(interaction: discord.Interaction):
-            # Defer pra evitar flood e timeout rápido
-            await interaction.response.defer(ephemeral=True)
-
+            await interaction.response.defer(ephemeral=True)  # Defer para evitar timeout
             msg_id = self.mensagem.id
             user = interaction.user
-            membro = interaction.guild.get_member(user.id)
-            nome = membro.display_name if membro else user.name
+            nome = interaction.guild.get_member(user.id).display_name
 
             grupo = grupos_ativos.get(msg_id)
             if not grupo:
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Se já estiver no grupo, remove antes de adicionar (trocar de classe)
-            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
+            if any(j['id'] == user.id for j in grupo['jogadores']):
+                grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
@@ -156,6 +152,7 @@ class GrupoView(discord.ui.View):
             await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
 
         return callback
+
 
 @bot.command(name='criargrupo')
 async def criar_grupo(ctx, intervalo: str):
@@ -194,43 +191,45 @@ async def criar_grupo(ctx, intervalo: str):
             'criador_id': ctx.author.id,
             'mensagem': mensagem
         }
-        await asyncio.sleep(1)  # pausa de 1 segundo para evitar flood
+
+        await asyncio.sleep(1)  # Pausa para evitar flood no Render Free
+
 
 @bot.event
 async def on_ready():
-    print(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+    logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+
 
 # Mantém o Flask alive numa thread paralela
 keep_alive()
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 if not TOKEN:
-    print("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
+    logging.error("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
     exit(1)
 
-# Função com retry exponencial para evitar crash por 429 e outros erros
+# Função com retry exponencial e limite para evitar crash por 429 e outros erros no Render Free
 async def start_bot():
     retry_delay = 5
     max_delay = 300
     tentativas = 0
     max_tentativas = 10
-
     while tentativas < max_tentativas:
         try:
-            print("Tentando conectar no Discord...")
+            logging.info("Tentando conectar no Discord...")
             await bot.start(TOKEN)
         except Exception as e:
             logging.error(f"Erro ao conectar: {e}")
-            print(f"Repetindo conexão em {retry_delay} segundos...")
+            tentativas += 1
+            logging.info(f"Tentativa {tentativas}/{max_tentativas} - Repetindo conexão em {retry_delay} segundos...")
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, max_delay)
-            tentativas += 1
         else:
-            print("Bot desconectado normalmente.")
+            logging.info("Bot desconectado normalmente.")
             break
     else:
-        print("Número máximo de tentativas atingido. Saindo.")
-        exit(1)
+        logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
+
 
 if __name__ == "__main__":
     asyncio.run(start_bot())
