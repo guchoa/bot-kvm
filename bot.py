@@ -23,7 +23,7 @@ CLASSES_EMOJIS = {
     'odalisca': '🟩',
     'cavaleiro': '🔴',
     'templario': '🟥',
-    'bruxo': '🔸',
+    'bruxo': '🔵',
     'sabio': '🟦',
     'ferreiro': '<:bolinha_ciano:1391827989267878030>',
     'alquimista': '<:quadrado_ciano:1391827991218225244>',
