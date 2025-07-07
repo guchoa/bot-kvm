@@ -1,16 +1,15 @@
 import os
 import logging
-from keep_alive import keep_alive
+import asyncio
 
 import discord
 from discord.ext import commands
-import asyncio
+from keep_alive import keep_alive  # Se você usa isso pra manter o bot rodando
 
 logging.basicConfig(level=logging.INFO)
 
 intents = discord.Intents.default()
 intents.message_content = True
-intents.presences = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -23,11 +22,11 @@ CLASSES_EMOJIS = {
     'odalisca': '🟩',
     'cavaleiro': '🔴',
     'templario': '🟥',
-    'bruxo': '🔵',
-    'sabio': '🔵',
+    'bruxo': '🔵',  # Blue circle corrigido aqui
+    'sabio': '🟦',
     'ferreiro': '<:bolinha_ciano:1391827989267878030>',
     'alquimista': '<:quadrado_ciano:1391827991218225244>',
-    'assassino': '🔳',
+    'assassino': '🟣',
     'arruaceiro': '🟪'
 }
 
@@ -57,7 +56,9 @@ class GrupoView(discord.ui.View):
             button.callback = self.gerar_callback(classe)
             self.add_item(button)
 
+        # Botões gerais que todo mundo pode usar
         self.add_item(discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, custom_id="sair"))
+        # Botões restritos ao criador
         self.add_item(discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, custom_id="fechar"))
         self.add_item(discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, custom_id="recriar"))
         self.add_item(discord.ui.Button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, custom_id="apagar"))
@@ -72,8 +73,49 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        if custom_id in ["fechar", "apagar", "recriar"] and grupo['criador_id'] != user_id:
+        if custom_id == "sair":
+            # Qualquer um pode sair do grupo
+            if any(j['id'] == user_id for j in grupo['jogadores']):
+                grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
+                linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
+                descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
+                embed = discord.Embed(title=f"PT {grupo['grupo']}", description=descricao, color=0x2B2D31)
+                await self.mensagem.edit(embed=embed, view=self)
+                await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
+            else:
+                await interaction.response.send_message("Você não está neste grupo.", ephemeral=True)
+            return False
+
+        # Para os botões a seguir, só o criador do grupo pode usar
+        if user_id != grupo['criador_id']:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
+            return False
+
+        if custom_id == "fechar":
+            for item in self.children:
+                item.disabled = True
+            await self.mensagem.edit(view=self)
+            await interaction.response.send_message(f"O grupo PT {grupo['grupo']} foi fechado para novas inscrições.", ephemeral=True)
+            return False
+
+        if custom_id == "apagar":
+            await self.mensagem.delete()
+            grupos_ativos.pop(msg_id, None)
+            await interaction.response.send_message("Grupo apagado com sucesso.", ephemeral=True)
+            return False
+
+        if custom_id == "recriar":
+            novo_embed = discord.Embed(title=f"PT {grupo['grupo']}", description="*Sem jogadores ainda.*", color=0x2B2D31)
+            nova_view = GrupoView(grupo_numero=grupo['grupo'], criador_id=user_id)
+            nova_msg = await self.mensagem.channel.send(embed=novo_embed, view=nova_view)
+            nova_view.mensagem = nova_msg
+            grupos_ativos[nova_msg.id] = {
+                'grupo': grupo['grupo'],
+                'jogadores': [],
+                'criador_id': user_id,
+                'mensagem': nova_msg
+            }
+            await interaction.response.send_message("Grupo recriado com sucesso.", ephemeral=True)
             return False
 
         return True
@@ -90,11 +132,15 @@ class GrupoView(discord.ui.View):
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Verifica se o jogador já está em outro grupo
-            for g_id, g_data in grupos_ativos.items():
-                if any(j['id'] == user.id for j in g_data['jogadores']):
-                    await interaction.followup.send("Você já está em outro grupo. Saia de lá antes de entrar aqui.", ephemeral=True)
-                    return
+            # Verifica se usuário já está em qualquer grupo ativo
+            for g in grupos_ativos.values():
+                if any(j['id'] == user.id for j in g['jogadores']):
+                    if g['mensagem'].id != msg_id:
+                        await interaction.followup.send("Você já está registrado em outro grupo. Saia dele antes de entrar em outro.", ephemeral=True)
+                        return
+
+            # Remove se já está no mesmo grupo (para trocar de classe)
+            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
@@ -139,8 +185,8 @@ async def criar_grupo(ctx, intervalo: str):
 
         try:
             await ctx.message.delete()
-        except Exception:
-            logging.warning("Não foi possível deletar a mensagem de comando.")
+        except Exception as e:
+            logging.warning(f"Não foi possível deletar a mensagem de comando: {e}")
 
         for numero in numeros:
             embed = discord.Embed(
@@ -162,12 +208,62 @@ async def criar_grupo(ctx, intervalo: str):
             await asyncio.sleep(1)
 
     except Exception as e:
-        logging.error(f"Erro inesperado ao criar grupo: {e}")
+        logging.error(f"Erro ao criar grupo: {e}")
         await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
+
+@bot.command(name='ajuda')
+async def ajuda(ctx):
+    texto = (
+        "**Comandos disponíveis:**\n"
+        "`!criargrupo <n>` ou `!criargrupo <inicio>-<fim>` — Cria grupos de PT no intervalo informado.\n"
+        "`!ajuda` — Mostra esta mensagem de ajuda.\n\n"
+        "Para entrar em um grupo, clique no botão da sua classe.\n"
+        "Para sair, clique em '❌ Sair do Grupo'.\n"
+        "Apenas o criador pode fechar, recriar ou apagar o grupo."
+    )
+    await ctx.send(texto)
+
+@bot.event
+async def on_guild_join(guild):
+    await garantir_cargo_bot(guild)
 
 @bot.event
 async def on_ready():
     logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+    for guild in bot.guilds:
+        await garantir_cargo_bot(guild)
+
+async def garantir_cargo_bot(guild):
+    nome_cargo = "Bot KVM"
+    cargo = discord.utils.get(guild.roles, name=nome_cargo)
+
+    if not cargo:
+        logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
+        try:
+            cargo = await guild.create_role(
+                name=nome_cargo,
+                permissions=discord.Permissions.all(),
+                color=discord.Color.teal(),
+                mentionable=False,
+                reason="Cargo padrão para o bot com todas permissões"
+            )
+            logging.info(f"Cargo '{nome_cargo}' criado em {guild.name}.")
+        except discord.Forbidden:
+            logging.warning(f"Permissões insuficientes para criar o cargo em {guild.name}")
+            return
+        except Exception as e:
+            logging.error(f"Erro ao criar o cargo em {guild.name}: {e}")
+            return
+
+    bot_member = guild.get_member(bot.user.id)
+    if bot_member and cargo not in bot_member.roles:
+        try:
+            await bot_member.add_roles(cargo, reason="Atribuição automática do cargo Bot KVM")
+            logging.info(f"Cargo '{nome_cargo}' atribuído ao bot em {guild.name}.")
+        except discord.Forbidden:
+            logging.warning(f"Permissões insuficientes para atribuir o cargo em {guild.name}")
+        except Exception as e:
+            logging.error(f"Erro ao atribuir o cargo em {guild.name}: {e}")
 
 keep_alive()
 
