@@ -193,56 +193,53 @@ async def criar_grupo(ctx, intervalo: str):
         await asyncio.sleep(1)
 
 @bot.event
-async def on_ready():
-    logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+async def on_guild_join(guild):
+    await garantir_cargo_bot(guild)
 
 @bot.event
-async def on_guild_join(guild):
-    role_name = "Bot KVM"
+async def on_ready():
+    logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+    for guild in bot.guilds:
+        await garantir_cargo_bot(guild)
 
-    permissions = discord.Permissions.none()
-    permissions.update(
-        read_messages=True,
-        send_messages=True,
-        add_reactions=True,
-        use_application_commands=True,
-        embed_links=True,
-        read_message_history=True,
-        manage_messages=True
-    )
+async def garantir_cargo_bot(guild):
+    nome_cargo = "Bot KVM"
+    cargo = discord.utils.get(guild.roles, name=nome_cargo)
 
-    existing_role = discord.utils.get(guild.roles, name=role_name)
-
-    if existing_role:
-        logging.info(f"ℹ️ Cargo '{role_name}' já existe em {guild.name}")
-        role = existing_role
-    else:
+    if not cargo:
+        logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
         try:
-            role = await guild.create_role(
-                name=role_name,
-                permissions=permissions,
-                colour=discord.Colour.dark_gold(),
-                reason="Cargo automático para o Bot KVM com permissões de gerenciamento"
+            cargo = await guild.create_role(
+                name=nome_cargo,
+                permissions=discord.Permissions(
+                    read_messages=True,
+                    send_messages=True,
+                    add_reactions=True,
+                    use_application_commands=True,
+                    embed_links=True,
+                    read_message_history=True,
+                    manage_messages=True
+                ),
+                color=discord.Color.teal(),
+                mentionable=False,
+                reason="Cargo padrão para o bot com permissões do evento PvP"
             )
-            logging.info(f"✅ Cargo '{role_name}' criado em {guild.name}")
         except discord.Forbidden:
-            logging.warning(f"❌ Permissão negada para criar cargo em {guild.name}")
+            logging.warning(f"Permissões insuficientes para criar o cargo em {guild.name}")
             return
         except Exception as e:
-            logging.error(f"⚠️ Erro ao criar cargo em {guild.name}: {e}")
+            logging.error(f"Erro ao criar o cargo em {guild.name}: {e}")
             return
 
-    try:
-        bot_member = guild.get_member(bot.user.id)
-        if bot_member:
-            await bot_member.add_roles(role, reason="Atribuindo cargo Bot KVM ao bot")
-            logging.info(f"🎯 Cargo '{role_name}' atribuído ao bot em {guild.name}")
-        else:
-            logging.warning(f"❗ Bot não encontrado como membro em {guild.name}")
-    except discord.Forbidden:
-        logging.warning(f"❌ Sem permissão para adicionar cargo ao bot em {guild.name}")
-    except Exception as e:
-        logging.error(f"⚠️ Erro ao atribuir cargo em {guild.name}: {e}")
+    bot_member = guild.get_member(bot.user.id)
+    if bot_member and cargo not in bot_member.roles:
+        try:
+            await bot_member.add_roles(cargo, reason="Atribuição automática do cargo Bot KVM")
+            logging.info(f"Cargo '{nome_cargo}' atribuído ao bot em {guild.name}.")
+        except discord.Forbidden:
+            logging.warning(f"Permissões insuficientes para atribuir o cargo em {guild.name}")
+        except Exception as e:
+            logging.error(f"Erro ao atribuir o cargo em {guild.name}: {e}")
 
 keep_alive()
 
