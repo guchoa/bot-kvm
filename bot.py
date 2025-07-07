@@ -27,8 +27,10 @@ CLASSES_EMOJIS = {
     'arruaceiro': '🟪'
 }
 
-# Armazena os jogadores por mensagem de grupo
-grupos_ativos = {}  # {msg_id: {'grupo': 1, 'jogadores': [{'id': id, 'nome': nome, 'classe': classe}]}}
+# Armazena os grupos ativos: msg_id: {grupo, jogadores, criador_id, mensagem}
+grupos_ativos = {}
+
+MAX_JOGADORES_POR_GRUPO = 5
 
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, mensagem=None):
@@ -64,15 +66,25 @@ class GrupoView(discord.ui.View):
                 await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
+            # Limite de jogadores
+            jogadores = grupo['jogadores']
+            if any(j['id'] == user.id for j in jogadores):
+                # Atualiza classe se já está no grupo
+                for j in jogadores:
+                    if j['id'] == user.id:
+                        j['classe'] = classe
+                        break
+            else:
+                if len(jogadores) >= MAX_JOGADORES_POR_GRUPO:
+                    await interaction.response.send_message("Grupo cheio! Máximo de 5 jogadores atingido.", ephemeral=True)
+                    return
+                jogadores.append({
+                    'id': user.id,
+                    'nome': nome,
+                    'classe': classe
+                })
 
-            grupo['jogadores'].append({
-                'id': user.id,
-                'nome': nome,
-                'classe': classe
-            })
-
-            linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
+            linhas = [f"{CLASSES_EMOJIS[j['classe']]} {j['nome']}" for j in jogadores]
             descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
 
             embed = discord.Embed(
@@ -85,34 +97,136 @@ class GrupoView(discord.ui.View):
 
         return callback
 
+
+class ControlesGerais(discord.ui.View):
+    def __init__(self, autor_id):
+        super().__init__(timeout=None)
+        self.autor_id = autor_id
+
+    @discord.ui.button(label="🩹 Apagar todos os grupos", style=discord.ButtonStyle.danger)
+    async def apagar_grupos(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message("Apenas quem criou os grupos pode apagá-los.", ephemeral=True)
+            return
+
+        for msg_id in list(grupos_ativos):
+            try:
+                mensagem = await interaction.channel.fetch_message(msg_id)
+                await mensagem.delete()
+            except:
+                pass
+            del grupos_ativos[msg_id]
+
+        await interaction.response.send_message("Todos os grupos foram apagados.", ephemeral=True)
+
+    @discord.ui.button(label="📋 Listar jogadores", style=discord.ButtonStyle.primary)
+    async def listar_jogadores(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not grupos_ativos:
+            await interaction.response.send_message("Nenhum grupo ativo.", ephemeral=True)
+            return
+
+        linhas = []
+        for grupo in sorted(grupos_ativos.values(), key=lambda x: x['grupo']):
+            jogadores = grupo['jogadores']
+            membros = "\n".join([f"{CLASSES_EMOJIS[j['classe']]} {j['nome']}" for j in jogadores]) or "*Sem jogadores ainda.*"
+            linhas.append(f"**PT {grupo['grupo']}**\n{membros}\n")
+
+        embed = discord.Embed(title="Resumo dos Grupos", description="\n".join(linhas), color=0x2B2D31)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="🔒 Fechar inscrições", style=discord.ButtonStyle.secondary)
+    async def fechar_inscricoes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message("Apenas quem criou os grupos pode fechá-los.", ephemeral=True)
+            return
+
+        for grupo in grupos_ativos.values():
+            if grupo['criador_id'] == self.autor_id:
+                grupo['mensagem'].view.stop()
+
+        await interaction.response.send_message("Inscrições encerradas para todos os grupos.", ephemeral=True)
+
+    @discord.ui.button(label="🔄 Recriar grupos", style=discord.ButtonStyle.success)
+    async def recriar_grupos(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.autor_id:
+            await interaction.response.send_message("Apenas quem criou os grupos pode recriá-los.", ephemeral=True)
+            return
+
+        novos_ids = []
+        for msg_id in list(grupos_ativos):
+            grupo = grupos_ativos[msg_id]
+            if grupo['criador_id'] != self.autor_id:
+                continue
+
+            embed = discord.Embed(
+                title=f"PT {grupo['grupo']}",
+                description="*Sem jogadores ainda.*",
+                color=0x2B2D31
+            )
+            view = GrupoView(grupo_numero=grupo['grupo'])
+            mensagem = await interaction.channel.send(embed=embed, view=view)
+            view.mensagem = mensagem
+
+            novos_ids.append(mensagem.id)
+            del grupos_ativos[msg_id]
+            grupos_ativos[mensagem.id] = {
+                'grupo': grupo['grupo'],
+                'jogadores': [],
+                'criador_id': self.autor_id,
+                'mensagem': mensagem
+            }
+
+        await interaction.response.send_message(f"{len(novos_ids)} grupos foram recriados.", ephemeral=True)
+
+
 @bot.command(name='criargrupo')
-async def criar_grupo(ctx, numero: int):
-    if not (1 <= numero <= 20):
-        await ctx.send("Número de PT inválido. Use um número entre 1 e 20.")
+async def criar_grupo(ctx, intervalo: str):
+    if '-' in intervalo:
+        partes = intervalo.split('-')
+        try:
+            inicio = int(partes[0])
+            fim = int(partes[1])
+        except ValueError:
+            await ctx.send("Formato inválido. Use por exemplo: !criargrupo 1-5")
+            return
+    else:
+        try:
+            inicio = fim = int(intervalo)
+        except ValueError:
+            await ctx.send("Formato inválido. Use por exemplo: !criargrupo 1-5")
+            return
+
+    if inicio < 1 or fim > 20 or inicio > fim:
+        await ctx.send("Intervalo inválido. Use números entre 1 e 20.")
         return
 
-    embed = discord.Embed(
-        title=f"PT {numero}",
-        description="*Sem jogadores ainda.*",
-        color=0x2B2D31
-    )
+    for numero in range(inicio, fim + 1):
+        embed = discord.Embed(
+            title=f"PT {numero}",
+            description="*Sem jogadores ainda.*",
+            color=0x2B2D31
+        )
+        view = GrupoView(grupo_numero=numero)
+        mensagem = await ctx.send(embed=embed, view=view)
+        view.mensagem = mensagem
 
-    view = GrupoView(grupo_numero=numero)
-    mensagem = await ctx.send(embed=embed, view=view)
-    view.mensagem = mensagem
+        grupos_ativos[mensagem.id] = {
+            'grupo': numero,
+            'jogadores': [],
+            'criador_id': ctx.author.id,
+            'mensagem': mensagem
+        }
 
-    grupos_ativos[mensagem.id] = {
-        'grupo': numero,
-        'jogadores': []
-    }
+    await ctx.send("Grupos criados com sucesso!", view=ControlesGerais(autor_id=ctx.author.id))
+
 
 @bot.event
 async def on_ready():
     print(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
 
+
 keep_alive()
 
-# Aqui pegamos o token da variável de ambiente
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 if not TOKEN:
     print("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
