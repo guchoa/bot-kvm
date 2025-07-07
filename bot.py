@@ -15,6 +15,8 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+from discord import PartialEmoji
+
 CLASSES_EMOJIS = {
     'sacerdote': '🟡',
     'monge': '🟨',
@@ -25,8 +27,8 @@ CLASSES_EMOJIS = {
     'templario': '🟥',
     'bruxo': '🔸',
     'sabio': '🟦',
-    'ferreiro': '<:bolinha_ciano:1391817828415443099>',
-    'alquimista': '<:quadrado_ciano:1391817845364494507>',
+    'ferreiro': PartialEmoji(name='bolinha_ciano', id=1391817828415443099),
+    'alquimista': PartialEmoji(name='quadrado_ciano', id=1391817845364494507),
     'assassino': '🟣',
     'arruaceiro': '🟪'
 }
@@ -40,17 +42,10 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        for classe, emoji_str in CLASSES_EMOJIS.items():
-            if emoji_str.startswith('<:'):
-                nome = emoji_str.split(':')[1]
-                id = int(emoji_str.split(':')[2][:-1])
-                emoji = discord.PartialEmoji(name=nome, id=id, animated=False)
-            else:
-                emoji = emoji_str
-
+        for classe, emoji_obj in CLASSES_EMOJIS.items():
             button = discord.ui.Button(
                 label=classe.capitalize(),
-                emoji=emoji,
+                emoji=emoji_obj,
                 style=discord.ButtonStyle.secondary,
                 custom_id=classe
             )
@@ -197,6 +192,20 @@ async def criar_grupo(ctx, intervalo: str):
     except Exception as e:
         logging.error(f"Erro inesperado ao criar grupo: {e}")
         await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
+
+@bot.command(name="testaremoji")
+async def testar_emoji(ctx):
+    # Manda uma mensagem com todos os emojis, pra ver se o bot consegue acessar e mostrar
+    partes = []
+    for classe, emoji in CLASSES_EMOJIS.items():
+        if isinstance(emoji, PartialEmoji):
+            # Formato do emoji customizado para exibir na mensagem
+            partes.append(f"<:{emoji.name}:{emoji.id}>")
+        else:
+            # Emoji padrão unicode
+            partes.append(emoji)
+    msg = "Testando emojis:\n" + " ".join(partes)
+    await ctx.send(msg)
 
 @bot.event
 async def on_guild_join(guild):
