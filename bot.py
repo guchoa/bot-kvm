@@ -25,8 +25,8 @@ CLASSES_EMOJIS = {
     'templario': '🟥',
     'bruxo': '🔸',
     'sabio': '🟦',
-    'ferreiro': '<:bolinha_ciano:1391828729185173637>',
-    'alquimista': '<:quadrado_ciano:1391828704342048779>',
+    'ferreiro': '<:bolinha_ciano:1391827989267878030>',
+    'alquimista': '<:quadrado_ciano:1391827991218225244>',
     'assassino': '🟣',
     'arruaceiro': '🟪'
 }
