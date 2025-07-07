@@ -19,7 +19,7 @@ CLASSES_EMOJIS = {
     'odalisca': '🟩',
     'cavaleiro': '🔴',
     'templario': '🟥',
-    'bruxo': '🔵',
+    'bruxo': '🔸',
     'sabio': '🟦',
     'ferreiro': '<:bolinha_ciano:1390774772903841893>',
     'alquimista': '<:quadrado_ciano:1390774774871097414>',
@@ -52,6 +52,29 @@ class GrupoView(discord.ui.View):
             button.callback = self.gerar_callback(classe)
             self.add_item(button)
 
+        self.add_item(discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, custom_id="sair"))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.data.get("custom_id") == "sair":
+            msg_id = self.mensagem.id
+            grupo = grupos_ativos.get(msg_id)
+            if not grupo:
+                await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
+                return False
+            user_id = interaction.user.id
+            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
+            linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
+            descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
+            embed = discord.Embed(
+                title=f"PT {grupo['grupo']}",
+                description=descricao,
+                color=0x2B2D31
+            )
+            await self.mensagem.edit(embed=embed, view=self)
+            await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
+            return False
+        return True
+
     def gerar_callback(self, classe):
         async def callback(interaction: discord.Interaction):
             msg_id = self.mensagem.id
@@ -63,12 +86,11 @@ class GrupoView(discord.ui.View):
                 await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Limite de 5 jogadores
-            if user.id not in [j['id'] for j in grupo['jogadores']] and len(grupo['jogadores']) >= 5:
-                await interaction.response.send_message("O grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
-                return
-
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
+
+            if len(grupo['jogadores']) >= 5:
+                await interaction.response.send_message("Este grupo já está cheio!", ephemeral=True)
+                return
 
             grupo['jogadores'].append({
                 'id': user.id,
@@ -171,6 +193,11 @@ class ControlesGerais(discord.ui.View):
 
 @bot.command(name='criargrupo')
 async def criar_grupo(ctx, intervalo: str):
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+
     if '-' in intervalo:
         partes = intervalo.split('-')
         try:
@@ -208,30 +235,6 @@ async def criar_grupo(ctx, intervalo: str):
         }
 
     await ctx.send("Grupos criados com sucesso!", view=ControlesGerais(autor_id=ctx.author.id))
-
-@bot.command(name='ajuda')
-async def ajuda(ctx):
-    texto = """
-**Comandos do Bot:**
-
-`!criargrupo <n>` - Cria um grupo único com número `n` (entre 1 e 20).  
-`!criargrupo <inicio>-<fim>` - Cria múltiplos grupos do número `inicio` até `fim` (entre 1 e 20).
-
----
-
-**Botões interativos:**
-
-🟡 até 🟪 — Escolha sua classe para entrar no grupo.  
-📋 Listar jogadores — Mostra os jogadores e suas classes em todos os grupos ativos.  
-🩹 Apagar todos os grupos — Remove todos os grupos criados por você.  
-🔒 Fechar inscrições — Impede novos jogadores de entrarem nos seus grupos.  
-🔄 Recriar grupos — Apaga e cria novamente seus grupos, limpando os jogadores.
-
----
-
-**Limite:** Cada grupo aceita até 5 jogadores.  
-"""
-    await ctx.send(texto)
 
 @bot.event
 async def on_ready():
