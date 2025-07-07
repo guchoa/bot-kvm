@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia todo o conteúdo do seu projeto para dentro do container
 COPY . .
 
+# Expõe a porta usada pelo keep_alive (Flask)
+EXPOSE 8080
+
 # Comando para rodar seu bot
 CMD ["python", "bot.py"]
