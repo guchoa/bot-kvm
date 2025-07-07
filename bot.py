@@ -70,7 +70,7 @@ class GrupoView(discord.ui.View):
             btn.callback = self.gerar_callback(classe)
             self.add_item(btn)
 
-        # Linha 2: 3 botões de classe + 2 botões administrativos (sair e fechar)
+        # Linha 2: 3 botões de classe
         for idx in range(10, 13):
             classe, emoji_str = classes[idx]
             emoji = self._parse_emoji(emoji_str)
@@ -84,18 +84,19 @@ class GrupoView(discord.ui.View):
             btn.callback = self.gerar_callback(classe)
             self.add_item(btn)
 
-        btn_sair = discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=2, custom_id=f"sair_{grupo_numero}")
-        btn_fechar = discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=2, custom_id=f"fechar_{grupo_numero}")
-        btn_sair.callback = self.sair_callback
-        btn_fechar.callback = self.fechar_callback
-        self.add_item(btn_sair)
-        self.add_item(btn_fechar)
-
-        # Linha 3: 2 botões administrativos (recriar e apagar)
+        # Linha 3: botões administrativos
+        btn_sair = discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"sair_{grupo_numero}")
+        btn_fechar = discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=3, custom_id=f"fechar_{grupo_numero}")
         btn_recriar = discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=3, custom_id=f"recriar_{grupo_numero}")
         btn_apagar = discord.ui.Button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"apagar_{grupo_numero}")
+
+        btn_sair.callback = self.sair_callback
+        btn_fechar.callback = self.fechar_callback
         btn_recriar.callback = self.recriar_callback
         btn_apagar.callback = self.apagar_callback
+
+        self.add_item(btn_sair)
+        self.add_item(btn_fechar)
         self.add_item(btn_recriar)
         self.add_item(btn_apagar)
 
@@ -234,7 +235,6 @@ class GrupoView(discord.ui.View):
         grupos_ativos.pop(msg_id, None)
         await interaction.response.send_message("Grupo apagado pelo criador.", ephemeral=True)
 
-
 @bot.command()
 async def criargrupo(ctx, intervalo: str):
     try:
@@ -262,6 +262,31 @@ async def criargrupo(ctx, intervalo: str):
         }
 
     await ctx.message.delete()
+
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def limpargrupos(ctx):
+    canal = ctx.channel
+    msgs_apagadas = 0
+    to_remove = []
+
+    async for msg in canal.history(limit=100):
+        if msg.id in grupos_ativos:
+            try:
+                await msg.delete()
+                to_remove.append(msg.id)
+                msgs_apagadas += 1
+            except discord.Forbidden:
+                await ctx.send("Não tenho permissão para apagar mensagens aqui.", delete_after=10)
+                return
+            except Exception as e:
+                await ctx.send(f"Erro ao apagar mensagem: {e}", delete_after=10)
+                return
+
+    for msg_id in to_remove:
+        grupos_ativos.pop(msg_id, None)
+
+    await ctx.send(f"🧹 Limpeza feita! {msgs_apagadas} grupos apagados neste canal.", delete_after=10)
 
 @bot.event
 async def on_ready():
