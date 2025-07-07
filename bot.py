@@ -3,6 +3,7 @@ from keep_alive import keep_alive
 
 import discord
 from discord.ext import commands
+import asyncio
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -190,6 +191,7 @@ async def criar_grupo(ctx, intervalo: str):
 async def on_ready():
     print(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
 
+# Mantém o Flask alive numa thread paralela
 keep_alive()
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
@@ -197,4 +199,22 @@ if not TOKEN:
     print("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
     exit(1)
 
-bot.run(TOKEN)
+# Função com retry exponencial para evitar crash por 429 e outros erros
+async def start_bot():
+    retry_delay = 5
+    max_delay = 300
+    while True:
+        try:
+            print("Tentando conectar no Discord...")
+            await bot.start(TOKEN)
+        except Exception as e:
+            print(f"Erro ao conectar: {e}")
+            print(f"Repetindo conexão em {retry_delay} segundos...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_delay)
+        else:
+            print("Bot desconectado normalmente.")
+            break
+
+if __name__ == "__main__":
+    asyncio.run(start_bot())
