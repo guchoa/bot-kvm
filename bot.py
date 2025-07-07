@@ -40,7 +40,7 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        # Botões das classes - dinâmicos
+        # Botões das classes na primeira linha
         for classe, emoji_str in CLASSES_EMOJIS.items():
             if emoji_str.startswith('<:'):
                 nome = emoji_str.split(':')[1]
@@ -58,6 +58,12 @@ class GrupoView(discord.ui.View):
             button.callback = self.gerar_callback(classe)
             self.add_item(button)
 
+        # Botões da segunda linha (linha separada)
+        self.add_item(discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=1, custom_id=f"sair_{grupo_numero}"))
+        self.add_item(discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=1, custom_id=f"fechar_{grupo_numero}"))
+        self.add_item(discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=1, custom_id=f"recriar_{grupo_numero}"))
+        self.add_item(discord.ui.Button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, row=1, custom_id=f"apagar_{grupo_numero}"))
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         custom_id = interaction.data.get("custom_id")
         grupo = grupos_ativos.get(self.mensagem.id)
@@ -67,8 +73,17 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        if any(custom_id.startswith(prefix) for prefix in ["classe_", "sair_", "fechar_", "recriar_", "apagar_"]):
-            if custom_id.startswith(("fechar_", "recriar_", "apagar_")) and user_id != grupo['criador_id']:
+        # Liberar para TODOS o botão sair
+        if custom_id.startswith("sair_"):
+            return True
+
+        # Botões de classe liberados para todos
+        if custom_id.startswith("classe_"):
+            return True
+
+        # Apenas o criador pode fechar, recriar, apagar
+        if custom_id.startswith(("fechar_", "recriar_", "apagar_")):
+            if user_id != grupo['criador_id']:
                 await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
                 return False
             return True
@@ -86,7 +101,6 @@ class GrupoView(discord.ui.View):
             user = interaction.user
             nome = interaction.guild.get_member(user.id).display_name
 
-            # Remove jogador caso já tenha uma classe escolhida
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
             if len(grupo['jogadores']) >= 5:
@@ -107,7 +121,7 @@ class GrupoView(discord.ui.View):
             await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
         return callback
 
-    @discord.ui.button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=1)
     async def sair_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
         if not grupo:
@@ -133,7 +147,7 @@ class GrupoView(discord.ui.View):
         await self.mensagem.edit(embed=embed, view=self)
         await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
 
-    @discord.ui.button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=1)
     async def fechar_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
         if not grupo:
@@ -150,7 +164,7 @@ class GrupoView(discord.ui.View):
         await self.mensagem.edit(view=self)
         await interaction.response.send_message(f"O grupo PT {grupo['grupo']} foi fechado para novas inscrições.", ephemeral=True)
 
-    @discord.ui.button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=1)
     async def recriar_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
         if not grupo:
@@ -178,7 +192,7 @@ class GrupoView(discord.ui.View):
         }
         await interaction.response.send_message("Grupo recriado com sucesso.", ephemeral=True)
 
-    @discord.ui.button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, row=1)
     async def apagar_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
         if not grupo:
@@ -203,7 +217,6 @@ async def on_ready():
 @bot.command()
 async def criargrupo(ctx, arg):
     try:
-        # Espera receber algo tipo '1-3' para criar grupos 1, 2 e 3
         partes = arg.split('-')
         start = int(partes[0])
         end = int(partes[1]) + 1
