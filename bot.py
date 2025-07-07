@@ -42,9 +42,20 @@ class GrupoView(discord.ui.View):
 
         for classe, emoji_str in CLASSES_EMOJIS.items():
             if emoji_str.startswith('<:'):
-                nome = emoji_str.split(':')[1]
-                id = int(emoji_str.split(':')[2][:-1])
-                emoji = discord.PartialEmoji(name=nome, id=id, animated=False)
+                # Parse emoji customizado
+                try:
+                    nome = emoji_str.split(':')[1]
+                    id = int(emoji_str.split(':')[2][:-1])
+                    emoji_obj = discord.utils.get(bot.emojis, id=id)
+                    if emoji_obj is None:
+                        logging.warning(f"Emoji customizado '{nome}' com ID {id} NÃO encontrado no cache do bot. Usando fallback ❓.")
+                        emoji = '❓'
+                    else:
+                        emoji = emoji_obj
+                        logging.info(f"Emoji customizado '{nome}' com ID {id} encontrado e usado.")
+                except Exception as e:
+                    logging.error(f"Erro ao processar emoji customizado {emoji_str}: {e}")
+                    emoji = '❓'
             else:
                 emoji = emoji_str
 
@@ -126,7 +137,7 @@ class GrupoView(discord.ui.View):
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Remove jogador se já entrou antes pra mudar de classe
+            # Remove jogador caso já esteja no grupo (trocar classe)
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
             if len(grupo['jogadores']) >= 5:
@@ -198,30 +209,6 @@ async def criar_grupo(ctx, intervalo: str):
         logging.error(f"Erro inesperado ao criar grupo: {e}")
         await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
 
-@bot.command(name='checaperms')
-async def checar_permissoes(ctx):
-    bot_member = ctx.guild.get_member(bot.user.id)
-    if not bot_member:
-        await ctx.send("Não consegui encontrar minhas informações neste servidor.")
-        return
-
-    permissoes = bot_member.guild_permissions
-    permissoes_str = "\n".join(
-        f"**{perm.replace('_', ' ').capitalize()}:** {valor}"
-        for perm, valor in permissoes
-    )
-    await ctx.send(f"Minhas permissões neste servidor:\n{permissoes_str}")
-
-@bot.command(name='testaremoji')
-async def testar_emoji(ctx):
-    # Testa se o bot pode usar os emojis customizados
-    emojis = [
-        "<:bolinha_ciano:1391817828415443099>",
-        "<:quadrado_ciano:1391817845364494507>"
-    ]
-    mensagem = "Testando emojis:\n" + " ".join(emojis)
-    await ctx.send(mensagem)
-
 @bot.event
 async def on_guild_join(guild):
     await garantir_cargo_bot(guild)
@@ -236,20 +223,15 @@ async def garantir_cargo_bot(guild):
     nome_cargo = "Bot KVM"
     cargo = discord.utils.get(guild.roles, name=nome_cargo)
 
-    # Permissões completas para o bot operar tranquilo
-    permissoes = discord.Permissions(
-        administrator=True  # Jeito mais fácil de garantir que o bot pode fazer tudo
-    )
-
     if not cargo:
         logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
         try:
             cargo = await guild.create_role(
                 name=nome_cargo,
-                permissions=permissoes,
+                permissions=discord.Permissions.all(),  # Permissões totais para garantir
                 color=discord.Color.teal(),
                 mentionable=False,
-                reason="Cargo padrão para o bot com permissões totais"
+                reason="Cargo padrão para o bot com todas permissões necessárias"
             )
         except discord.Forbidden:
             logging.warning(f"Permissões insuficientes para criar o cargo em {guild.name}")
@@ -267,6 +249,26 @@ async def garantir_cargo_bot(guild):
             logging.warning(f"Permissões insuficientes para atribuir o cargo em {guild.name}")
         except Exception as e:
             logging.error(f"Erro ao atribuir o cargo em {guild.name}: {e}")
+
+@bot.command(name='testaremoji')
+async def testar_emojis(ctx):
+    emojis_texto = []
+    for classe, emoji_str in CLASSES_EMOJIS.items():
+        if emoji_str.startswith('<:'):
+            try:
+                nome = emoji_str.split(':')[1]
+                id = int(emoji_str.split(':')[2][:-1])
+                emoji_obj = discord.utils.get(bot.emojis, id=id)
+                if emoji_obj is None:
+                    emojis_texto.append(f"❌ {classe}: emoji não encontrado")
+                else:
+                    emojis_texto.append(f"✅ {classe}: {emoji_obj}")
+            except Exception:
+                emojis_texto.append(f"❌ {classe}: erro ao processar emoji")
+        else:
+            emojis_texto.append(f"✅ {classe}: {emoji_str}")
+
+    await ctx.send("Testando emojis:\n" + "\n".join(emojis_texto))
 
 keep_alive()
 
