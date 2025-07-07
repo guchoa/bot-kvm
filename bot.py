@@ -15,7 +15,6 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Emojis corrigidos com PartialEmoji
 CLASSES_EMOJIS = {
     'sacerdote': '🟡',
     'monge': '🟨',
@@ -26,8 +25,8 @@ CLASSES_EMOJIS = {
     'templario': '🟥',
     'bruxo': '🔸',
     'sabio': '🟦',
-    'ferreiro': discord.PartialEmoji(name="bolinha_ciano", id=1391817828415443099),
-    'alquimista': discord.PartialEmoji(name="quadrado_ciano", id=1391817845364494507),
+    'ferreiro': '<:bolinha_ciano:1391817828415443099>',
+    'alquimista': '<:quadrado_ciano:1391817845364494507>',
     'assassino': '🟣',
     'arruaceiro': '🟪'
 }
@@ -41,7 +40,14 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        for classe, emoji in CLASSES_EMOJIS.items():
+        for classe, emoji_str in CLASSES_EMOJIS.items():
+            if emoji_str.startswith('<:'):
+                nome = emoji_str.split(':')[1]
+                id = int(emoji_str.split(':')[2][:-1])
+                emoji = discord.PartialEmoji(name=nome, id=id, animated=False)
+            else:
+                emoji = emoji_str
+
             button = discord.ui.Button(
                 label=classe.capitalize(),
                 emoji=emoji,
@@ -149,6 +155,8 @@ class GrupoView(discord.ui.View):
 @bot.command(name='criargrupo')
 async def criar_grupo(ctx, intervalo: str):
     try:
+        logging.info(f"Comando !criargrupo recebido de {ctx.author}")
+
         if '-' in intervalo:
             inicio, fim = map(int, intervalo.split('-'))
             if not (1 <= inicio <= 20 and 1 <= fim <= 20) or inicio > fim:
@@ -161,30 +169,34 @@ async def criar_grupo(ctx, intervalo: str):
                 await ctx.send("Número de PT inválido. Use um número entre 1 e 20.")
                 return
             numeros = [numero]
-    except ValueError:
-        await ctx.send("Formato inválido. Use !criargrupo 1 ou !criargrupo 1-5.")
-        return
 
-    await ctx.message.delete()
+        try:
+            await ctx.message.delete()
+        except Exception as e:
+            logging.warning(f"Não foi possível deletar a mensagem: {e}")
 
-    for numero in numeros:
-        embed = discord.Embed(
-            title=f"PT {numero}",
-            description="*Sem jogadores ainda.*",
-            color=0x2B2D31
-        )
-        view = GrupoView(grupo_numero=numero, criador_id=ctx.author.id)
-        mensagem = await ctx.send(embed=embed, view=view)
-        view.mensagem = mensagem
+        for numero in numeros:
+            embed = discord.Embed(
+                title=f"PT {numero}",
+                description="*Sem jogadores ainda.*",
+                color=0x2B2D31
+            )
+            view = GrupoView(grupo_numero=numero, criador_id=ctx.author.id)
+            mensagem = await ctx.send(embed=embed, view=view)
+            view.mensagem = mensagem
 
-        grupos_ativos[mensagem.id] = {
-            'grupo': numero,
-            'jogadores': [],
-            'criador_id': ctx.author.id,
-            'mensagem': mensagem
-        }
+            grupos_ativos[mensagem.id] = {
+                'grupo': numero,
+                'jogadores': [],
+                'criador_id': ctx.author.id,
+                'mensagem': mensagem
+            }
+            logging.info(f"Grupo PT {numero} criado com sucesso.")
+            await asyncio.sleep(1)
 
-        await asyncio.sleep(1)
+    except Exception as e:
+        logging.error(f"Erro inesperado ao criar grupo: {e}")
+        await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
 
 @bot.event
 async def on_guild_join(guild):
