@@ -171,7 +171,10 @@ async def criar_grupo(ctx, intervalo: str):
         await ctx.send("Formato inválido. Use !criargrupo 1 ou !criargrupo 1-5.")
         return
 
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        await ctx.send("Não tenho permissão para apagar sua mensagem.", delete_after=5)
 
     for numero in numeros:
         embed = discord.Embed(
@@ -209,19 +212,17 @@ async def garantir_cargo_bot(guild):
     if not cargo:
         logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
         try:
-            permissions = discord.Permissions(
-                manage_roles=True,
-                manage_messages=True,
-                view_channel=True,
-                send_messages=True,
-                add_reactions=True,
-                read_message_history=True,
-                use_application_commands=True,
-                embed_links=True
-            )
             cargo = await guild.create_role(
                 name=nome_cargo,
-                permissions=permissions,
+                permissions=discord.Permissions(
+                    read_messages=True,
+                    send_messages=True,
+                    add_reactions=True,
+                    use_application_commands=True,
+                    embed_links=True,
+                    read_message_history=True,
+                    manage_messages=True
+                ),
                 color=discord.Color.teal(),
                 mentionable=False,
                 reason="Cargo padrão para o bot com permissões do evento PvP"
