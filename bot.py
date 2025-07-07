@@ -31,7 +31,7 @@ CLASSES_EMOJIS = {
     'arruaceiro': '🟪'
 }
 
-grupos_ativos = {}  # {msg_id: {'grupo': 1, 'jogadores': [], 'criador_id': id, 'mensagem': mensagem}}
+grupos_ativos = {}
 
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, criador_id=None, mensagem=None):
@@ -72,7 +72,6 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        # Quem pode usar o que:
         if custom_id == "sair":
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
             linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
@@ -117,7 +116,7 @@ class GrupoView(discord.ui.View):
 
     def gerar_callback(self, classe):
         async def callback(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)  # Defer para evitar timeout
+            await interaction.response.defer(ephemeral=True)
             msg_id = self.mensagem.id
             user = interaction.user
             nome = interaction.guild.get_member(user.id).display_name
@@ -152,7 +151,6 @@ class GrupoView(discord.ui.View):
             await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
 
         return callback
-
 
 @bot.command(name='criargrupo')
 async def criar_grupo(ctx, intervalo: str):
@@ -192,15 +190,60 @@ async def criar_grupo(ctx, intervalo: str):
             'mensagem': mensagem
         }
 
-        await asyncio.sleep(1)  # Pausa para evitar flood no Render Free
-
+        await asyncio.sleep(1)
 
 @bot.event
 async def on_ready():
     logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
 
+@bot.event
+async def on_guild_join(guild):
+    role_name = "Bot KVM"
 
-# Mantém o Flask alive numa thread paralela
+    permissions = discord.Permissions.none()
+    permissions.update(
+        read_messages=True,
+        send_messages=True,
+        add_reactions=True,
+        use_application_commands=True,
+        embed_links=True,
+        read_message_history=True,
+        manage_messages=True
+    )
+
+    existing_role = discord.utils.get(guild.roles, name=role_name)
+
+    if existing_role:
+        logging.info(f"ℹ️ Cargo '{role_name}' já existe em {guild.name}")
+        role = existing_role
+    else:
+        try:
+            role = await guild.create_role(
+                name=role_name,
+                permissions=permissions,
+                colour=discord.Colour.dark_gold(),
+                reason="Cargo automático para o Bot KVM com permissões de gerenciamento"
+            )
+            logging.info(f"✅ Cargo '{role_name}' criado em {guild.name}")
+        except discord.Forbidden:
+            logging.warning(f"❌ Permissão negada para criar cargo em {guild.name}")
+            return
+        except Exception as e:
+            logging.error(f"⚠️ Erro ao criar cargo em {guild.name}: {e}")
+            return
+
+    try:
+        bot_member = guild.get_member(bot.user.id)
+        if bot_member:
+            await bot_member.add_roles(role, reason="Atribuindo cargo Bot KVM ao bot")
+            logging.info(f"🎯 Cargo '{role_name}' atribuído ao bot em {guild.name}")
+        else:
+            logging.warning(f"❗ Bot não encontrado como membro em {guild.name}")
+    except discord.Forbidden:
+        logging.warning(f"❌ Sem permissão para adicionar cargo ao bot em {guild.name}")
+    except Exception as e:
+        logging.error(f"⚠️ Erro ao atribuir cargo em {guild.name}: {e}")
+
 keep_alive()
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
@@ -208,7 +251,6 @@ if not TOKEN:
     logging.error("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
     exit(1)
 
-# Função com retry exponencial e limite para evitar crash por 429 e outros erros no Render Free
 async def start_bot():
     retry_delay = 5
     max_delay = 300
@@ -229,7 +271,6 @@ async def start_bot():
             break
     else:
         logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
-
 
 if __name__ == "__main__":
     asyncio.run(start_bot())
