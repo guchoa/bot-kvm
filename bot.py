@@ -1,5 +1,4 @@
 import os
-import re
 import logging
 from keep_alive import keep_alive
 
@@ -34,8 +33,6 @@ CLASSES_EMOJIS = {
 
 grupos_ativos = {}
 
-EMOJI_REGEX = re.compile(r'<:(\w+):(\d+)>')
-
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, criador_id=None, mensagem=None):
         super().__init__(timeout=None)
@@ -44,16 +41,12 @@ class GrupoView(discord.ui.View):
         self.mensagem = mensagem
 
         for classe, emoji_str in CLASSES_EMOJIS.items():
-            match = EMOJI_REGEX.match(emoji_str)
-            if match:
-                nome, id_str = match.groups()
-                id_emoji = int(id_str)
-                emoji = discord.PartialEmoji(name=nome, id=id_emoji)
+            if emoji_str.startswith('<:'):
+                nome = emoji_str.split(':')[1]
+                id = int(emoji_str.split(':')[2][:-1])
+                emoji = discord.PartialEmoji(name=nome, id=id)
             else:
                 emoji = emoji_str
-
-            # Debug print para garantir que o emoji está correto
-            print(f"[DEBUG] Classe: {classe} - Emoji: {emoji} ({type(emoji)})")
 
             button = discord.ui.Button(
                 label=classe.capitalize(),
@@ -178,12 +171,7 @@ async def criar_grupo(ctx, intervalo: str):
         await ctx.send("Formato inválido. Use !criargrupo 1 ou !criargrupo 1-5.")
         return
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        await ctx.send("Não tenho permissão para apagar mensagens.", ephemeral=True)
-    except Exception as e:
-        await ctx.send(f"Erro ao apagar mensagem: {e}", ephemeral=True)
+    await ctx.message.delete()
 
     for numero in numeros:
         embed = discord.Embed(
@@ -225,8 +213,10 @@ async def garantir_cargo_bot(guild):
                 name=nome_cargo,
                 permissions=discord.Permissions(
                     read_messages=True,
+                    view_channel=True,
                     send_messages=True,
                     add_reactions=True,
+                    use_external_emojis=True,
                     use_application_commands=True,
                     embed_links=True,
                     read_message_history=True,
