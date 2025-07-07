@@ -15,6 +15,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Emojis corrigidos com PartialEmoji
 CLASSES_EMOJIS = {
     'sacerdote': '🟡',
     'monge': '🟨',
@@ -25,8 +26,8 @@ CLASSES_EMOJIS = {
     'templario': '🟥',
     'bruxo': '🔸',
     'sabio': '🟦',
-    'ferreiro': '<:bolinha_ciano:1391809479112265859>',
-    'alquimista': '<:quadrado_ciano:1391809524343767161>',
+    'ferreiro': discord.PartialEmoji(name="bolinha_ciano", id=1391809479112265859),
+    'alquimista': discord.PartialEmoji(name="quadrado_ciano", id=1391809524343767161),
     'assassino': '🟣',
     'arruaceiro': '🟪'
 }
@@ -40,14 +41,7 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        for classe, emoji_str in CLASSES_EMOJIS.items():
-            if emoji_str.startswith('<:'):
-                nome = emoji_str.split(':')[1]
-                id = int(emoji_str.split(':')[2][:-1])
-                emoji = discord.PartialEmoji(name=nome, id=id)
-            else:
-                emoji = emoji_str
-
+        for classe, emoji in CLASSES_EMOJIS.items():
             button = discord.ui.Button(
                 label=classe.capitalize(),
                 emoji=emoji,
@@ -213,10 +207,8 @@ async def garantir_cargo_bot(guild):
                 name=nome_cargo,
                 permissions=discord.Permissions(
                     read_messages=True,
-                    view_channel=True,
                     send_messages=True,
                     add_reactions=True,
-                    use_external_emojis=True,
                     use_application_commands=True,
                     embed_links=True,
                     read_message_history=True,
