@@ -10,11 +10,11 @@ logging.basicConfig(level=logging.INFO)
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.presences = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Dicionário com classes e emojis (use os emojis corretos do seu servidor)
 CLASSES_EMOJIS = {
     'sacerdote': '🟡',
     'monge': '🟨',
@@ -31,7 +31,6 @@ CLASSES_EMOJIS = {
     'arruaceiro': '🟪'
 }
 
-# Estado dos grupos: chave = mensagem.id, valor = dict com info do grupo
 grupos_ativos = {}
 
 class GrupoView(discord.ui.View):
@@ -41,10 +40,9 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        # Botões de classes
+        # Botões das classes - dinâmicos
         for classe, emoji_str in CLASSES_EMOJIS.items():
             if emoji_str.startswith('<:'):
-                # emoji customizado
                 nome = emoji_str.split(':')[1]
                 id = int(emoji_str.split(':')[2][:-1])
                 emoji = discord.PartialEmoji(name=nome, id=id, animated=False)
@@ -60,30 +58,6 @@ class GrupoView(discord.ui.View):
             button.callback = self.gerar_callback(classe)
             self.add_item(button)
 
-        # Botão sair (todos podem usar)
-        self.add_item(discord.ui.Button(
-            label="❌ Sair do Grupo",
-            style=discord.ButtonStyle.danger,
-            custom_id=f"sair_{grupo_numero}"
-        ))
-
-        # Botões restritos ao criador
-        self.add_item(discord.ui.Button(
-            label="🔒 Fechar Grupo",
-            style=discord.ButtonStyle.primary,
-            custom_id=f"fechar_{grupo_numero}"
-        ))
-        self.add_item(discord.ui.Button(
-            label="♻️ Recriar Grupo",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"recriar_{grupo_numero}"
-        ))
-        self.add_item(discord.ui.Button(
-            label="🗑️ Apagar Grupo",
-            style=discord.ButtonStyle.danger,
-            custom_id=f"apagar_{grupo_numero}"
-        ))
-
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         custom_id = interaction.data.get("custom_id")
         grupo = grupos_ativos.get(self.mensagem.id)
@@ -93,16 +67,13 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        # Permitir para TODOS os membros os botões de classe e sair
-        if any(custom_id.startswith(prefix) for prefix in ["classe_", "sair_"]):
+        if any(custom_id.startswith(prefix) for prefix in ["classe_", "sair_", "fechar_", "recriar_", "apagar_"]):
+            if custom_id.startswith(("fechar_", "recriar_", "apagar_")) and user_id != grupo['criador_id']:
+                await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
+                return False
             return True
 
-        # Outros botões só para criador
-        if user_id != grupo['criador_id']:
-            await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
-            return False
-
-        return True
+        return False
 
     def gerar_callback(self, classe):
         async def callback(interaction: discord.Interaction):
@@ -115,10 +86,9 @@ class GrupoView(discord.ui.View):
             user = interaction.user
             nome = interaction.guild.get_member(user.id).display_name
 
-            # Remove o usuário de outros cargos para evitar duplicidade
+            # Remove jogador caso já tenha uma classe escolhida
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
-            # Limite 5 jogadores
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
                 return
@@ -224,65 +194,34 @@ class GrupoView(discord.ui.View):
         grupos_ativos.pop(self.mensagem.id, None)
         await interaction.response.send_message("Grupo apagado com sucesso.", ephemeral=True)
 
-@bot.command(name='criargrupo')
-async def criar_grupo(ctx, intervalo: str):
-    try:
-        logging.info(f"Comando !criargrupo recebido de {ctx.author}")
-
-        # Limpa grupos antigos do canal atual para evitar duplicação (opcional)
-        # Você pode comentar essa parte se quiser manter grupos antigos no canal
-        grupos_ativos.clear()
-
-        if '-' in intervalo:
-            inicio, fim = map(int, intervalo.split('-'))
-            if not (1 <= inicio <= 20 and 1 <= fim <= 20) or inicio > fim:
-                await ctx.send("Intervalo inválido. Use números entre 1 e 20, como !criargrupo 1-5.")
-                return
-            numeros = range(inicio, fim + 1)
-        else:
-            numero = int(intervalo)
-            if not (1 <= numero <= 20):
-                await ctx.send("Número de PT inválido. Use um número entre 1 e 20.")
-                return
-            numeros = [numero]
-
-        try:
-            await ctx.message.delete()
-        except Exception as e:
-            logging.warning(f"Não foi possível deletar a mensagem de comando: {e}")
-
-        for numero in numeros:
-            embed = discord.Embed(
-                title=f"PT {numero}",
-                description="*Sem jogadores ainda.*",
-                color=0x2B2D31
-            )
-            view = GrupoView(grupo_numero=numero, criador_id=ctx.author.id, mensagem=None)
-            mensagem = await ctx.send(embed=embed, view=view)
-            view.mensagem = mensagem
-
-            grupos_ativos[mensagem.id] = {
-                'grupo': numero,
-                'jogadores': [],
-                'criador_id': ctx.author.id,
-                'mensagem': mensagem
-            }
-            logging.info(f"Grupo PT {numero} criado.")
-            await asyncio.sleep(1)
-
-    except Exception as e:
-        logging.error(f"Erro inesperado ao criar grupo: {e}")
-        await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
-
-@bot.command(name="limpargrupos")
-@commands.is_owner()
-async def limpar_grupos(ctx):
-    grupos_ativos.clear()
-    await ctx.send("Estado dos grupos foi limpo.")
 
 @bot.event
 async def on_ready():
     logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+
+
+@bot.command()
+async def criargrupo(ctx, arg):
+    try:
+        # Espera receber algo tipo '1-3' para criar grupos 1, 2 e 3
+        partes = arg.split('-')
+        start = int(partes[0])
+        end = int(partes[1]) + 1
+    except Exception:
+        await ctx.send("Formato inválido! Use !criargrupo X-Y (ex: !criargrupo 1-3)")
+        return
+
+    for num in range(start, end):
+        embed = discord.Embed(title=f"PT {num}", description="*Sem jogadores ainda.*", color=0x2B2D31)
+        view = GrupoView(grupo_numero=num, criador_id=ctx.author.id, mensagem=None)
+        mensagem = await ctx.send(embed=embed, view=view)
+        view.mensagem = mensagem
+        grupos_ativos[mensagem.id] = {
+            'grupo': num,
+            'jogadores': [],
+            'criador_id': ctx.author.id,
+            'mensagem': mensagem
+        }
 
 keep_alive()
 
