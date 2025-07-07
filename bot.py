@@ -10,11 +10,11 @@ logging.basicConfig(level=logging.INFO)
 
 intents = discord.Intents.default()
 intents.message_content = True
-intents.presences = True
 intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Dicionário com classes e emojis (use os emojis corretos do seu servidor)
 CLASSES_EMOJIS = {
     'sacerdote': '🟡',
     'monge': '🟨',
@@ -23,7 +23,7 @@ CLASSES_EMOJIS = {
     'odalisca': '🟩',
     'cavaleiro': '🔴',
     'templario': '🟥',
-    'bruxo': '🔵',  # blue circle para bruxo
+    'bruxo': '🔵',
     'sabio': '🟦',
     'ferreiro': '<:bolinha_ciano:1391827989267878030>',
     'alquimista': '<:quadrado_ciano:1391827991218225244>',
@@ -31,18 +31,20 @@ CLASSES_EMOJIS = {
     'arruaceiro': '🟪'
 }
 
+# Estado dos grupos: chave = mensagem.id, valor = dict com info do grupo
 grupos_ativos = {}
 
 class GrupoView(discord.ui.View):
-    def __init__(self, grupo_numero, criador_id, mensagem=None):
+    def __init__(self, grupo_numero, criador_id, mensagem):
         super().__init__(timeout=None)
         self.grupo_numero = grupo_numero
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        # Botões das classes
+        # Botões de classes
         for classe, emoji_str in CLASSES_EMOJIS.items():
             if emoji_str.startswith('<:'):
+                # emoji customizado
                 nome = emoji_str.split(':')[1]
                 id = int(emoji_str.split(':')[2][:-1])
                 emoji = discord.PartialEmoji(name=nome, id=id, animated=False)
@@ -58,12 +60,29 @@ class GrupoView(discord.ui.View):
             button.callback = self.gerar_callback(classe)
             self.add_item(button)
 
-        # Botão sair disponível para todos
-        self.add_item(discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, custom_id=f"sair_{grupo_numero}"))
-        # Botões exclusivos do criador
-        self.add_item(discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, custom_id=f"fechar_{grupo_numero}"))
-        self.add_item(discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, custom_id=f"recriar_{grupo_numero}"))
-        self.add_item(discord.ui.Button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, custom_id=f"apagar_{grupo_numero}"))
+        # Botão sair (todos podem usar)
+        self.add_item(discord.ui.Button(
+            label="❌ Sair do Grupo",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"sair_{grupo_numero}"
+        ))
+
+        # Botões restritos ao criador
+        self.add_item(discord.ui.Button(
+            label="🔒 Fechar Grupo",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"fechar_{grupo_numero}"
+        ))
+        self.add_item(discord.ui.Button(
+            label="♻️ Recriar Grupo",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"recriar_{grupo_numero}"
+        ))
+        self.add_item(discord.ui.Button(
+            label="🗑️ Apagar Grupo",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"apagar_{grupo_numero}"
+        ))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         custom_id = interaction.data.get("custom_id")
@@ -74,11 +93,11 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        # Botões de classe e sair liberados para todos
+        # Permitir para TODOS os membros os botões de classe e sair
         if any(custom_id.startswith(prefix) for prefix in ["classe_", "sair_"]):
             return True
 
-        # Só o criador pode usar fechar, recriar e apagar
+        # Outros botões só para criador
         if user_id != grupo['criador_id']:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
             return False
@@ -96,20 +115,17 @@ class GrupoView(discord.ui.View):
             user = interaction.user
             nome = interaction.guild.get_member(user.id).display_name
 
-            # Remove o usuário de qualquer classe para evitar duplicidade
+            # Remove o usuário de outros cargos para evitar duplicidade
             grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
+            # Limite 5 jogadores
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
                 return
 
-            grupo['jogadores'].append({
-                'id': user.id,
-                'nome': nome,
-                'classe': classe
-            })
+            grupo['jogadores'].append({'id': user.id, 'nome': nome, 'classe': classe})
 
-            linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
+            linhas = [f"{CLASSES_EMOJIS[j['classe']]} {j['nome']}" for j in grupo['jogadores']]
             descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
 
             embed = discord.Embed(
@@ -119,18 +135,16 @@ class GrupoView(discord.ui.View):
             )
             await self.mensagem.edit(embed=embed, view=self)
             await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
-
         return callback
 
-    @discord.ui.button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, custom_id="sair")
+    @discord.ui.button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger)
     async def sair_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
-        user_id = interaction.user.id
-
         if not grupo:
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return
 
+        user_id = interaction.user.id
         jogadores_antes = len(grupo['jogadores'])
         grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
 
@@ -138,7 +152,7 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Você não estava nesse grupo.", ephemeral=True)
             return
 
-        linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
+        linhas = [f"{CLASSES_EMOJIS[j['classe']]} {j['nome']}" for j in grupo['jogadores']]
         descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
 
         embed = discord.Embed(
@@ -149,15 +163,14 @@ class GrupoView(discord.ui.View):
         await self.mensagem.edit(embed=embed, view=self)
         await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
 
-    @discord.ui.button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, custom_id="fechar")
+    @discord.ui.button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary)
     async def fechar_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
-        user_id = interaction.user.id
-
         if not grupo:
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return
 
+        user_id = interaction.user.id
         if user_id != grupo['criador_id']:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
             return
@@ -167,21 +180,24 @@ class GrupoView(discord.ui.View):
         await self.mensagem.edit(view=self)
         await interaction.response.send_message(f"O grupo PT {grupo['grupo']} foi fechado para novas inscrições.", ephemeral=True)
 
-    @discord.ui.button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, custom_id="recriar")
+    @discord.ui.button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary)
     async def recriar_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
-        user_id = interaction.user.id
-
         if not grupo:
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return
 
+        user_id = interaction.user.id
         if user_id != grupo['criador_id']:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
             return
 
-        novo_embed = discord.Embed(title=f"PT {grupo['grupo']}", description="*Sem jogadores ainda.*", color=0x2B2D31)
-        nova_view = GrupoView(grupo_numero=grupo['grupo'], criador_id=user_id)
+        novo_embed = discord.Embed(
+            title=f"PT {grupo['grupo']}",
+            description="*Sem jogadores ainda.*",
+            color=0x2B2D31
+        )
+        nova_view = GrupoView(grupo_numero=grupo['grupo'], criador_id=user_id, mensagem=None)
         nova_msg = await self.mensagem.channel.send(embed=novo_embed, view=nova_view)
         nova_view.mensagem = nova_msg
         grupos_ativos[nova_msg.id] = {
@@ -192,15 +208,14 @@ class GrupoView(discord.ui.View):
         }
         await interaction.response.send_message("Grupo recriado com sucesso.", ephemeral=True)
 
-    @discord.ui.button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, custom_id="apagar")
+    @discord.ui.button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger)
     async def apagar_callback(self, button: discord.ui.Button, interaction: discord.Interaction):
         grupo = grupos_ativos.get(self.mensagem.id)
-        user_id = interaction.user.id
-
         if not grupo:
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return
 
+        user_id = interaction.user.id
         if user_id != grupo['criador_id']:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
             return
@@ -213,6 +228,10 @@ class GrupoView(discord.ui.View):
 async def criar_grupo(ctx, intervalo: str):
     try:
         logging.info(f"Comando !criargrupo recebido de {ctx.author}")
+
+        # Limpa grupos antigos do canal atual para evitar duplicação (opcional)
+        # Você pode comentar essa parte se quiser manter grupos antigos no canal
+        grupos_ativos.clear()
 
         if '-' in intervalo:
             inicio, fim = map(int, intervalo.split('-'))
@@ -238,7 +257,7 @@ async def criar_grupo(ctx, intervalo: str):
                 description="*Sem jogadores ainda.*",
                 color=0x2B2D31
             )
-            view = GrupoView(grupo_numero=numero, criador_id=ctx.author.id)
+            view = GrupoView(grupo_numero=numero, criador_id=ctx.author.id, mensagem=None)
             mensagem = await ctx.send(embed=embed, view=view)
             view.mensagem = mensagem
 
@@ -254,6 +273,12 @@ async def criar_grupo(ctx, intervalo: str):
     except Exception as e:
         logging.error(f"Erro inesperado ao criar grupo: {e}")
         await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
+
+@bot.command(name="limpargrupos")
+@commands.is_owner()
+async def limpar_grupos(ctx):
+    grupos_ativos.clear()
+    await ctx.send("Estado dos grupos foi limpo.")
 
 @bot.event
 async def on_ready():
