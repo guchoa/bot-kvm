@@ -15,8 +15,6 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-from discord import PartialEmoji
-
 CLASSES_EMOJIS = {
     'sacerdote': '🟡',
     'monge': '🟨',
@@ -27,8 +25,8 @@ CLASSES_EMOJIS = {
     'templario': '🟥',
     'bruxo': '🔸',
     'sabio': '🟦',
-    'ferreiro': PartialEmoji(name='bolinha_ciano', id=1391817828415443099),
-    'alquimista': PartialEmoji(name='quadrado_ciano', id=1391817845364494507),
+    'ferreiro': '<:bolinha_ciano:1391817828415443099>',
+    'alquimista': '<:quadrado_ciano:1391817845364494507>',
     'assassino': '🟣',
     'arruaceiro': '🟪'
 }
@@ -42,10 +40,17 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        for classe, emoji_obj in CLASSES_EMOJIS.items():
+        for classe, emoji_str in CLASSES_EMOJIS.items():
+            if emoji_str.startswith('<:'):
+                nome = emoji_str.split(':')[1]
+                id = int(emoji_str.split(':')[2][:-1])
+                emoji = discord.PartialEmoji(name=nome, id=id, animated=False)
+            else:
+                emoji = emoji_str
+
             button = discord.ui.Button(
                 label=classe.capitalize(),
-                emoji=emoji_obj,
+                emoji=emoji,
                 style=discord.ButtonStyle.secondary,
                 custom_id=classe
             )
@@ -193,19 +198,17 @@ async def criar_grupo(ctx, intervalo: str):
         logging.error(f"Erro inesperado ao criar grupo: {e}")
         await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
 
-@bot.command(name="testaremoji")
-async def testar_emoji(ctx):
-    # Manda uma mensagem com todos os emojis, pra ver se o bot consegue acessar e mostrar
-    partes = []
-    for classe, emoji in CLASSES_EMOJIS.items():
-        if isinstance(emoji, PartialEmoji):
-            # Formato do emoji customizado para exibir na mensagem
-            partes.append(f"<:{emoji.name}:{emoji.id}>")
-        else:
-            # Emoji padrão unicode
-            partes.append(emoji)
-    msg = "Testando emojis:\n" + " ".join(partes)
-    await ctx.send(msg)
+@bot.command(name='checaperms')
+async def checar_permissoes(ctx):
+    bot_member = ctx.guild.get_member(bot.user.id)
+    if not bot_member:
+        await ctx.send("Não consegui encontrar minhas informações neste servidor.")
+        return
+
+    permissoes = bot_member.guild_permissions
+    permissoes_str = "\n".join([f"**{perm.replace('_', ' ').capitalize()}:** {getattr(permissoes, perm)}" 
+                               for perm in permissoes.__dict__.keys() if not perm.startswith('_')])
+    await ctx.send(f"Minhas permissões neste servidor:\n{permissoes_str}")
 
 @bot.event
 async def on_guild_join(guild):
@@ -218,26 +221,34 @@ async def on_ready():
         await garantir_cargo_bot(guild)
 
 async def garantir_cargo_bot(guild):
-    nome_cargo = "Bot KVM"
+    nome_cargo = "Bot KVM Supremo"
     cargo = discord.utils.get(guild.roles, name=nome_cargo)
 
     if not cargo:
         logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
         try:
+            permissoes = discord.Permissions(
+                manage_roles=True,
+                manage_messages=True,
+                send_messages=True,
+                read_messages=True,
+                add_reactions=True,
+                use_external_emojis=True,
+                embed_links=True,
+                read_message_history=True,
+                manage_channels=True,
+                manage_webhooks=True,
+                manage_guild=True,
+                view_channel=True,
+                connect=True,
+                speak=True
+            )
             cargo = await guild.create_role(
                 name=nome_cargo,
-                permissions=discord.Permissions(
-                    read_messages=True,
-                    send_messages=True,
-                    add_reactions=True,
-                    use_application_commands=True,
-                    embed_links=True,
-                    read_message_history=True,
-                    manage_messages=True
-                ),
-                color=discord.Color.teal(),
+                permissions=permissoes,
+                color=discord.Color.dark_teal(),
                 mentionable=False,
-                reason="Cargo padrão para o bot com permissões do evento PvP"
+                reason="Cargo supremo para o bot com todas permissões necessárias"
             )
         except discord.Forbidden:
             logging.warning(f"Permissões insuficientes para criar o cargo em {guild.name}")
@@ -249,7 +260,7 @@ async def garantir_cargo_bot(guild):
     bot_member = guild.get_member(bot.user.id)
     if bot_member and cargo not in bot_member.roles:
         try:
-            await bot_member.add_roles(cargo, reason="Atribuição automática do cargo Bot KVM")
+            await bot_member.add_roles(cargo, reason="Atribuição automática do cargo Bot KVM Supremo")
             logging.info(f"Cargo '{nome_cargo}' atribuído ao bot em {guild.name}.")
         except discord.Forbidden:
             logging.warning(f"Permissões insuficientes para atribuir o cargo em {guild.name}")
