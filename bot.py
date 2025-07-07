@@ -24,15 +24,14 @@ CLASSES_EMOJIS = {
     'cavaleiro': '🔴',
     'templario': '🟥',
     'bruxo': '🔵',
-    'sabio': '🟦',
+    'sabio': '🔵',
     'ferreiro': '<:bolinha_ciano:1391827989267878030>',
     'alquimista': '<:quadrado_ciano:1391827991218225244>',
-    'assassino': '🟣',
+    'assassino': '🔳',
     'arruaceiro': '🟪'
 }
 
 grupos_ativos = {}
-usuarios_em_grupo = set()
 
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, criador_id=None, mensagem=None):
@@ -73,49 +72,8 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        if custom_id == "sair":
-            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
-            usuarios_em_grupo.discard(user_id)
-            linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
-            descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
-            embed = discord.Embed(title=f"PT {grupo['grupo']}", description=descricao, color=0x2B2D31)
-            await self.mensagem.edit(embed=embed, view=self)
-            await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
-            return False
-
-        if grupo['criador_id'] != user_id:
+        if custom_id in ["fechar", "apagar", "recriar"] and grupo['criador_id'] != user_id:
             await interaction.response.send_message("Apenas o criador do grupo pode usar este botão.", ephemeral=True)
-            return False
-
-        if custom_id == "fechar":
-            for item in self.children:
-                item.disabled = True
-            await self.mensagem.edit(view=self)
-            await interaction.response.send_message(f"O grupo PT {grupo['grupo']} foi fechado para novas inscrições.", ephemeral=True)
-            return False
-
-        if custom_id == "apagar":
-            for j in grupo['jogadores']:
-                usuarios_em_grupo.discard(j['id'])
-            await self.mensagem.delete()
-            grupos_ativos.pop(msg_id, None)
-            await interaction.response.send_message("Grupo apagado com sucesso.", ephemeral=True)
-            return False
-
-        if custom_id == "recriar":
-            for j in grupo['jogadores']:
-                usuarios_em_grupo.discard(j['id'])
-            novo_embed = discord.Embed(title=f"PT {grupo['grupo']}", description="*Sem jogadores ainda.*", color=0x2B2D31)
-            nova_view = GrupoView(grupo_numero=grupo['grupo'], criador_id=user_id)
-            nova_msg = await self.mensagem.channel.send(embed=novo_embed, view=nova_view)
-            nova_view.mensagem = nova_msg
-            grupos_ativos[nova_msg.id] = {
-                'grupo': grupo['grupo'],
-                'jogadores': [],
-                'criador_id': user_id,
-                'mensagem': nova_msg
-            }
-            await interaction.response.send_message("Grupo recriado com sucesso.", ephemeral=True)
             return False
 
         return True
@@ -132,11 +90,11 @@ class GrupoView(discord.ui.View):
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            if user.id in usuarios_em_grupo:
-                await interaction.followup.send("Você já está em um grupo. Saia de um antes de entrar em outro.", ephemeral=True)
-                return
-
-            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
+            # Verifica se o jogador já está em outro grupo
+            for g_id, g_data in grupos_ativos.items():
+                if any(j['id'] == user.id for j in g_data['jogadores']):
+                    await interaction.followup.send("Você já está em outro grupo. Saia de lá antes de entrar aqui.", ephemeral=True)
+                    return
 
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
@@ -147,12 +105,15 @@ class GrupoView(discord.ui.View):
                 'nome': nome,
                 'classe': classe
             })
-            usuarios_em_grupo.add(user.id)
 
             linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
             descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
 
-            embed = discord.Embed(title=f"PT {grupo['grupo']}", description=descricao, color=0x2B2D31)
+            embed = discord.Embed(
+                title=f"PT {grupo['grupo']}",
+                description=descricao,
+                color=0x2B2D31
+            )
             await self.mensagem.edit(embed=embed, view=self)
             await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
 
