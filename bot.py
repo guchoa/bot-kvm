@@ -258,4 +258,77 @@ async def criar_grupo(ctx, intervalo: str):
             await asyncio.sleep(1)
 
     except Exception as e:
-        logging.error(f"
+        logging.error(f"Erro inesperado ao criar grupo: {e}")
+        await ctx.send("❌ Ocorreu um erro ao criar o grupo. Verifique os logs.")
+
+@bot.event
+async def on_guild_join(guild):
+    await garantir_cargo_bot(guild)
+
+@bot.event
+async def on_ready():
+    logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
+    for guild in bot.guilds:
+        await garantir_cargo_bot(guild)
+
+async def garantir_cargo_bot(guild):
+    nome_cargo = "Bot KVM"
+    cargo = discord.utils.get(guild.roles, name=nome_cargo)
+
+    if not cargo:
+        logging.info(f"Criando cargo '{nome_cargo}' em {guild.name}...")
+        try:
+            cargo = await guild.create_role(
+                name=nome_cargo,
+                permissions=discord.Permissions.all(),
+                color=discord.Color.teal(),
+                mentionable=False,
+                reason="Cargo padrão para o bot com todas permissões necessárias"
+            )
+        except discord.Forbidden:
+            logging.warning(f"Permissões insuficientes para criar o cargo em {guild.name}")
+            return
+        except Exception as e:
+            logging.error(f"Erro ao criar o cargo em {guild.name}: {e}")
+            return
+
+    bot_member = guild.get_member(bot.user.id)
+    if bot_member and cargo not in bot_member.roles:
+        try:
+            await bot_member.add_roles(cargo, reason="Atribuição automática do cargo Bot KVM")
+            logging.info(f"Cargo '{nome_cargo}' atribuído ao bot em {guild.name}.")
+        except discord.Forbidden:
+            logging.warning(f"Permissões insuficientes para atribuir o cargo em {guild.name}")
+        except Exception as e:
+            logging.error(f"Erro ao atribuir o cargo em {guild.name}: {e}")
+
+keep_alive()
+
+TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+if not TOKEN:
+    logging.error("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
+    exit(1)
+
+async def start_bot():
+    retry_delay = 5
+    max_delay = 300
+    tentativas = 0
+    max_tentativas = 10
+    while tentativas < max_tentativas:
+        try:
+            logging.info("Tentando conectar no Discord...")
+            await bot.start(TOKEN)
+        except Exception as e:
+            logging.error(f"Erro ao conectar: {e}")
+            tentativas += 1
+            logging.info(f"Tentativa {tentativas}/{max_tentativas} - Repetindo conexão em {retry_delay} segundos...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_delay)
+        else:
+            logging.info("Bot desconectado normalmente.")
+            break
+    else:
+        logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
+
+if __name__ == "__main__":
+    asyncio.run(start_bot())
