@@ -8,18 +8,6 @@ from keep_alive import keep_alive
 import discord
 from discord.ext import commands
 
-# === FLASK PARA O PAINEL WEB ===
-app = Flask(__name__)
-
-@app.route("/painel")
-def painel():
-    html = "<h1 style='font-family:sans-serif;'>Grupos ativos</h1><ul>"
-    for grupo_id, grupo in grupos_ativos.items():
-        jogadores = ", ".join(f"{CLASSES_EMOJIS[j['classe']]} {j['nome']}" for j in grupo["jogadores"])
-        html += f"<li><strong>PT {grupo['grupo']}:</strong> {jogadores or 'Sem jogadores'}</li>"
-    html += "</ul>"
-    return html
-
 # === DISCORD BOT SETUP ===
 logging.basicConfig(level=logging.INFO)
 
