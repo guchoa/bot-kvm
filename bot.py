@@ -33,7 +33,9 @@ CLASSES_EMOJIS = {
 
 grupos_ativos = {}
 
+# Linka sua função para painel conseguir ler grupos
 set_grupos_ativos_ref(lambda: grupos_ativos)
+
 
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, criador_id, mensagem):
@@ -137,7 +139,7 @@ class GrupoView(discord.ui.View):
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Remove o usuário de todos os grupos
+            # Remove o usuário de todos os outros grupos (removendo visualmente tbm)
             for g_id, g in list(grupos_ativos.items()):
                 if any(j['id'] == user.id for j in g['jogadores']):
                     g['jogadores'] = [j for j in g['jogadores'] if j['id'] != user.id]
@@ -153,7 +155,7 @@ class GrupoView(discord.ui.View):
                         )
                         await msg.edit(embed=embed)
                     except Exception as e:
-                        print(f"[Erro ao atualizar grupo {g_id}]: {e}")
+                        logging.error(f"[Erro ao atualizar grupo {g_id}]: {e}")
 
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
@@ -178,7 +180,43 @@ class GrupoView(discord.ui.View):
 
         return callback
 
-    # ... mantém os outros callbacks: sair_callback, fechar_callback, recriar_callback, apagar_callback ...
+    async def sair_callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        user = interaction.user
+        msg_id = self.mensagem.id
+
+        grupo = grupos_ativos.get(msg_id)
+        if not grupo:
+            await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
+            return
+
+        jogador_no_grupo = any(j['id'] == user.id for j in grupo['jogadores'])
+        if not jogador_no_grupo:
+            await interaction.followup.send("Você não está nesse grupo.", ephemeral=True)
+            return
+
+        grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
+
+        linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
+        descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
+
+        embed = discord.Embed(
+            title=f"PT {grupo['grupo']}",
+            description=descricao,
+            color=0x2B2D31
+        )
+        await self.mensagem.edit(embed=embed, view=self)
+        await interaction.followup.send("Você saiu do grupo.", ephemeral=True)
+
+    async def fechar_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Função fechar grupo não implementada ainda.", ephemeral=True)
+
+    async def recriar_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Função recriar grupo não implementada ainda.", ephemeral=True)
+
+    async def apagar_callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message("Função apagar grupo não implementada ainda.", ephemeral=True)
+
 
 @bot.command()
 async def criargrupo(ctx, intervalo: str):
