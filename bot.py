@@ -108,16 +108,34 @@ class GrupoView(discord.ui.View):
         else:
             return emoji_str
 
+# Comando corrigido para criar grupo sem duplicar
 @bot.command()
-async def criargrupo(ctx):
-    numeros_existentes = [g['grupo'] for g in grupos_ativos.values() if g['canal_id'] == ctx.channel.id]
-    for i in range(1, 21):
-        if i not in numeros_existentes:
-            grupo_num = i
-            break
+async def criargrupo(ctx, *, arg=None):
+    if arg and '-' in arg:
+        try:
+            inicio, fim = map(int, arg.split('-'))
+            for i in range(inicio, fim + 1):
+                await criar_grupo_unico(ctx, i)
+        except:
+            await ctx.send("Formato inválido. Use !criargrupo 1-3")
     else:
-        await ctx.send("Limite de 20 grupos atingido neste canal.", delete_after=10)
-        return
+        await criar_grupo_unico(ctx)
+
+async def criar_grupo_unico(ctx, numero=None):
+    numeros_existentes = [g['grupo'] for g in grupos_ativos.values() if g['canal_id'] == ctx.channel.id]
+    if numero:
+        if numero in numeros_existentes:
+            await ctx.send(f"Grupo {numero} já existe neste canal.")
+            return
+        grupo_num = numero
+    else:
+        for i in range(1, 21):
+            if i not in numeros_existentes:
+                grupo_num = i
+                break
+        else:
+            await ctx.send("Limite de 20 grupos atingido neste canal.")
+            return
 
     embed = discord.Embed(
         title=f"PT {grupo_num}",
@@ -138,6 +156,7 @@ async def criargrupo(ctx):
     except:
         pass
 
+# Comando para limpar todos os grupos no canal atual
 @bot.command()
 async def limpargrupos(ctx):
     grupos_para_remover = [msg_id for msg_id, g in grupos_ativos.items() if g['canal_id'] == ctx.channel.id]
@@ -150,6 +169,7 @@ async def limpargrupos(ctx):
         del grupos_ativos[msg_id]
     await ctx.send("Todos os grupos deste canal foram apagados.", delete_after=10)
 
+# Funções para manter o bot vivo
 set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
 
