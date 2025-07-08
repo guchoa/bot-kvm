@@ -91,7 +91,6 @@ def painel():
       <div class="container-cards">
     """
 
-    # Mapa emojis conforme classe para visual bacana
     emojis = {
         'sacerdote': '🟡',
         'monge': '🟨',
@@ -102,7 +101,7 @@ def painel():
         'templario': '🟥',
         'bruxo': '🔵',
         'sabio': '🟦',
-        'ferreiro': '🔵',  # sem emoji customizado no painel
+        'ferreiro': '🔵',
         'alquimista': '🔵',
         'assassino': '🟣',
         'arruaceiro': '🟪'
@@ -128,9 +127,7 @@ def painel():
     </body>
     </html>
     """
-
     return html
-
 
 def set_grupos_ativos_func(func):
     global get_grupos_ativos
