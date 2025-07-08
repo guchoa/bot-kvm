@@ -44,6 +44,11 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
+        if not mensagem:
+            logging.warning(f"GrupoView criado sem mensagem para PT {grupo_numero}")
+        else:
+            logging.info(f"GrupoView criado para PT {grupo_numero} com mensagem {mensagem.id}")
+
         classes = list(CLASSES_EMOJIS.items())
 
         # Botões organizados em 3 linhas: 5 + 5 + 3
@@ -86,7 +91,7 @@ class GrupoView(discord.ui.View):
             btn.callback = self.gerar_callback(classe)
             self.add_item(btn)
 
-        # Botões extras, todos na última linha (linha 3)
+        # Botões extras na linha 3
         btn_sair = discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"sair_{grupo_numero}")
         btn_fechar = discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=3, custom_id=f"fechar_{grupo_numero}")
         btn_recriar = discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=3, custom_id=f"recriar_{grupo_numero}")
@@ -147,17 +152,22 @@ class GrupoView(discord.ui.View):
                 if any(j['id'] == user.id for j in g['jogadores']):
                     if g_id != msg_id:
                         g['jogadores'] = [j for j in g['jogadores'] if j['id'] != user.id]
-                        msg_antiga = await bot.get_channel(g['canal_id']).fetch_message(g_id)
-                        if msg_antiga:
-                            view_antiga = GrupoView(g['grupo'], g['criador_id'], msg_antiga)
-                            linhas_antigas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in g['jogadores']]
-                            desc_antiga = "\n".join(linhas_antigas) if linhas_antigas else "*Sem jogadores ainda.*"
-                            embed_antiga = discord.Embed(
-                                title=f"PT {g['grupo']}",
-                                description=desc_antiga,
-                                color=0x2B2D31
-                            )
-                            await msg_antiga.edit(embed=embed_antiga, view=view_antiga)
+                        canal = bot.get_channel(g['canal_id'])
+                        if canal:
+                            try:
+                                msg_antiga = await canal.fetch_message(g_id)
+                                if msg_antiga:
+                                    view_antiga = GrupoView(g['grupo'], g['criador_id'], msg_antiga)
+                                    linhas_antigas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in g['jogadores']]
+                                    desc_antiga = "\n".join(linhas_antigas) if linhas_antigas else "*Sem jogadores ainda.*"
+                                    embed_antiga = discord.Embed(
+                                        title=f"PT {g['grupo']}",
+                                        description=desc_antiga,
+                                        color=0x2B2D31
+                                    )
+                                    await msg_antiga.edit(embed=embed_antiga, view=view_antiga)
+                            except Exception as e:
+                                logging.warning(f"Erro ao atualizar mensagem antiga: {e}")
 
             # Limite 5 jogadores no grupo, exceto se já estiver nele
             if len(grupo['jogadores']) >= 5 and all(j['id'] != user.id for j in grupo['jogadores']):
@@ -187,7 +197,10 @@ class GrupoView(discord.ui.View):
                 description=descricao,
                 color=0x2B2D31
             )
-            await self.mensagem.edit(embed=embed, view=self)
+            try:
+                await self.mensagem.edit(embed=embed, view=self)
+            except Exception as e:
+                logging.warning(f"Falha ao editar mensagem no callback da classe: {e}")
             await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
 
         return callback
@@ -216,7 +229,10 @@ class GrupoView(discord.ui.View):
             description=descricao,
             color=0x2B2D31
         )
-        await self.mensagem.edit(embed=embed, view=self)
+        try:
+            await self.mensagem.edit(embed=embed, view=self)
+        except Exception as e:
+            logging.warning(f"Falha ao editar mensagem no sair_callback: {e}")
         await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
 
     async def fechar_callback(self, interaction: discord.Interaction):
@@ -233,7 +249,10 @@ class GrupoView(discord.ui.View):
 
         for item in self.children:
             item.disabled = True
-        await self.mensagem.edit(view=self)
+        try:
+            await self.mensagem.edit(view=self)
+        except Exception as e:
+            logging.warning(f"Falha ao editar mensagem no fechar_callback: {e}")
         await interaction.response.send_message("Grupo fechado. Ninguém mais pode entrar.", ephemeral=True)
 
     async def recriar_callback(self, interaction: discord.Interaction):
@@ -251,12 +270,16 @@ class GrupoView(discord.ui.View):
         grupo['jogadores'].clear()
         for item in self.children:
             item.disabled = False
+
         embed = discord.Embed(
             title=f"PT {grupo['grupo']}",
             description="*Sem jogadores ainda.*",
             color=0x2B2D31
         )
-        await self.mensagem.edit(embed=embed, view=self)
+        try:
+            await self.mensagem.edit(embed=embed, view=self)
+        except Exception as e:
+            logging.warning(f"Falha ao editar mensagem no recriar_callback: {e}")
         await interaction.response.send_message("Grupo recriado e aberto.", ephemeral=True)
 
     async def apagar_callback(self, interaction: discord.Interaction):
@@ -278,10 +301,9 @@ class GrupoView(discord.ui.View):
             except Exception as e:
                 logging.warning(f"Falha ao apagar mensagem do grupo: {e}")
 
-        del grupos_ativos[msg_id]
+        grupos_ativos.pop(msg_id, None)
         await interaction.response.send_message("Grupo apagado com sucesso.", ephemeral=True)
 
-# Comando para criar grupos, aceita intervalo e números separados
 @bot.command()
 async def criargrupo(ctx, *, arg=None):
     if not arg:
@@ -289,11 +311,9 @@ async def criargrupo(ctx, *, arg=None):
         await criargrupo_unico(ctx, None)
         return
 
-    # Tenta interpretar intervalo ou lista de números
     try:
         grupos_para_criar = set()
 
-        # Exemplo: "1-3,5,7"
         partes = [p.strip() for p in arg.split(',')]
         for parte in partes:
             if '-' in parte:
@@ -311,11 +331,9 @@ async def criargrupo(ctx, *, arg=None):
                     return
                 grupos_para_criar.add(num)
 
-        # Ordena para criar em ordem
         grupos_para_criar = sorted(grupos_para_criar)
 
         for grupo_num in grupos_para_criar:
-            # Verifica se já existe no canal esse grupo_num
             existe = False
             for g in grupos_ativos.values():
                 if g['canal_id'] == ctx.channel.id and g['grupo'] == grupo_num:
@@ -324,6 +342,7 @@ async def criargrupo(ctx, *, arg=None):
                     break
             if not existe:
                 await criargrupo_unico(ctx, grupo_num)
+                await asyncio.sleep(0.2)  # prevenir flood e problemas de concorrência
         try:
             await ctx.message.delete()
         except:
@@ -334,7 +353,6 @@ async def criargrupo(ctx, *, arg=None):
 
 async def criargrupo_unico(ctx, grupo_num=None):
     if grupo_num is None:
-        # Próximo número disponível 1-20
         numeros_existentes = [g['grupo'] for g in grupos_ativos.values() if g['canal_id'] == ctx.channel.id]
         for i in range(1, 21):
             if i not in numeros_existentes:
@@ -357,9 +375,11 @@ async def criargrupo_unico(ctx, grupo_num=None):
         'jogadores': [],
         'canal_id': ctx.channel.id
     }
-    await msg.edit(view=view)
+    try:
+        await msg.edit(view=view)
+    except Exception as e:
+        logging.warning(f"Falha ao editar mensagem após criação do grupo {grupo_num}: {e}")
 
-# Comando para limpar todos os grupos no canal atual
 @bot.command()
 async def limpargrupos(ctx):
     grupos_para_remover = [msg_id for msg_id, g in grupos_ativos.items() if g['canal_id'] == ctx.channel.id]
@@ -369,10 +389,9 @@ async def limpargrupos(ctx):
             await msg.delete()
         except:
             pass
-        del grupos_ativos[msg_id]
+        grupos_ativos.pop(msg_id, None)
     await ctx.send("Todos os grupos deste canal foram apagados.", delete_after=10)
 
-# Funções para manter o bot vivo
 set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
 
