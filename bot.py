@@ -2,71 +2,12 @@ import os
 import logging
 import asyncio
 
-from flask import Flask, render_template_string
-from threading import Thread
-
 import discord
 from discord.ext import commands
 
+import keep_alive  # Importa o servidor Flask separado para painel
+
 logging.basicConfig(level=logging.INFO)
-
-# --- Configuração do Flask para o painel web ---
-app = Flask('')
-
-PAINEL_HTML = """
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8" />
-<title>PTs KVM OBLIVION</title>
-<style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1e1e2f; color: #ddd; padding: 20px; }
-    h1 { color: #5f9ea0; }
-    .grupo { background: #2c2c3a; padding: 10px 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 0 5px #5f9ea0; }
-    .titulo { font-weight: bold; font-size: 1.2em; color: #7fffd4; }
-    .jogador { margin-left: 15px; }
-    footer { margin-top: 40px; font-size: 0.9em; color: #777; }
-</style>
-</head>
-<body>
-<h1>PTs KVM OBLIVION</h1>
-{% if grupos %}
-    {% for g in grupos %}
-    <div class="grupo">
-        <div class="titulo">PT {{ g['grupo'] }}</div>
-        {% if g['jogadores'] %}
-            {% for j in g['jogadores'] %}
-                <div class="jogador">{{ emojis[j['classe']] }} {{ j['nome'] }} ({{ j['classe'].capitalize() }})</div>
-            {% endfor %}
-        {% else %}
-            <div class="jogador"><i>Sem jogadores ainda.</i></div>
-        {% endif %}
-    </div>
-    {% endfor %}
-{% else %}
-    <p>Nenhum grupo criado ainda.</p>
-{% endif %}
-<footer>Bot by Gab - Última atualização automática</footer>
-</body>
-</html>
-"""
-
-@app.route('/painel')
-def painel():
-    # Converte o dict para lista ordenada pra exibir bonitinho
-    grupos_list = sorted(grupos_ativos.values(), key=lambda x: x['grupo'])
-    return render_template_string(PAINEL_HTML, grupos=grupos_list, emojis=CLASSES_EMOJIS)
-
-
-def run_flask():
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.start()
-
-# --- Fim painel web ---
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -92,6 +33,9 @@ CLASSES_EMOJIS = {
 }
 
 grupos_ativos = {}
+
+# Injeta o getter para o painel poder acessar os grupos via Flask
+keep_alive.get_grupos_ativos = lambda: grupos_ativos
 
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, criador_id, mensagem):
@@ -195,9 +139,14 @@ class GrupoView(discord.ui.View):
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Remove jogador de qualquer outro grupo que ele esteja (incluindo o atual, pra garantir)
-            for g in grupos_ativos.values():
-                g['jogadores'] = [j for j in g['jogadores'] if j['id'] != user.id]
+            # Remove usuário de qualquer outro grupo antes de adicionar neste
+            for g_id, g in grupos_ativos.items():
+                if any(j['id'] == user.id for j in g['jogadores']):
+                    if g_id != msg_id:
+                        g['jogadores'] = [j for j in g['jogadores'] if j['id'] != user.id]
+
+            # Remove jogador do grupo atual (caso estivesse)
+            grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user.id]
 
             if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
@@ -348,7 +297,7 @@ async def limpargrupos(ctx):
 async def on_ready():
     logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
 
-keep_alive()
+keep_alive.keep_alive()
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 if not TOKEN:
