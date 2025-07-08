@@ -13,7 +13,7 @@ def home():
 
 @app.route('/painel')
 def painel():
-    if get_grupos_ativos is None:
+    if get_grpos_ativos is None:
         return "<h1>Erro: dados do bot não disponíveis</h1>", 500
 
     grupos = get_grupos_ativos()
@@ -48,7 +48,7 @@ def painel():
     html += "</tbody></table></body></html>"
     return html
 
-def set_grupos_ativos_func(func):
+def set_grupos_ativos_ref(func):
     global get_grupos_ativos
     get_grupos_ativos = func
 
