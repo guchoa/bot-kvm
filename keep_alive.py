@@ -4,7 +4,7 @@ import os
 
 app = Flask('')
 
-# Essa função será definida pelo bot
+# Essa função será definida pelo bot para acessar os dados dos grupos
 get_grupos_ativos = None
 
 @app.route('/')
@@ -13,42 +13,126 @@ def home():
 
 @app.route('/painel')
 def painel():
-    if get_grpos_ativos is None:
+    if get_grupos_ativos is None:
         return "<h1>Erro: dados do bot não disponíveis</h1>", 500
 
     grupos = get_grupos_ativos()
 
     html = """
+    <!DOCTYPE html>
     <html lang="pt-br">
     <head>
     <meta charset="UTF-8" />
     <title>PTs KVM OBLIVION</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-    body { background: #222; color: #eee; font-family: Arial, sans-serif; padding: 1rem; }
-    h1 { color: #4CAF50; text-align: center; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { border: 1px solid #555; padding: 0.5rem; text-align: left; }
-    th { background: #444; }
-    tr:nth-child(even) { background: #333; }
+      body {
+        background-color: #0d1117;
+        color: #c9d1d9;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        padding: 20px;
+      }
+      h1 {
+        color: #58a6ff;
+        text-align: center;
+        margin-bottom: 30px;
+        font-weight: 700;
+        text-shadow: 0 0 5px #58a6ff;
+      }
+      .card {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        box-shadow: 0 0 10px #23863680;
+        transition: transform 0.2s;
+      }
+      .card:hover {
+        transform: scale(1.03);
+        box-shadow: 0 0 20px #58a6ff;
+      }
+      .card-title {
+        color: #58a6ff;
+        font-weight: 700;
+        font-size: 1.5rem;
+        margin-bottom: 15px;
+        text-align: center;
+        text-shadow: 0 0 8px #58a6ff;
+      }
+      ul.jogadores {
+        list-style-type: none;
+        padding-left: 0;
+        font-size: 1.1rem;
+      }
+      ul.jogadores li {
+        padding: 5px 10px;
+        border-bottom: 1px solid #30363d;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      ul.jogadores li:last-child {
+        border-bottom: none;
+      }
+      .emoji {
+        font-size: 1.4rem;
+      }
+      .container-cards {
+        max-width: 900px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+      }
     </style>
     </head>
     <body>
-    <h1>PTs KVM OBLIVION</h1>
-    <table>
-    <thead><tr><th>Grupo</th><th>Criador (ID)</th><th>Jogadores</th></tr></thead>
-    <tbody>
+      <h1>PTs KVM OBLIVION</h1>
+      <div class="container-cards">
     """
 
-    for grupo_id, info in grupos.items():
-        jogadores_html = "<br>".join(
-            f"{j['nome']} ({j['classe'].capitalize()})" for j in info['jogadores']
-        ) or "<i>Sem jogadores</i>"
-        html += f"<tr><td>PT {info['grupo']}</td><td>{info['criador_id']}</td><td>{jogadores_html}</td></tr>"
+    # Mapa emojis conforme classe para visual bacana
+    emojis = {
+        'sacerdote': '🟡',
+        'monge': '🟨',
+        'cacador': '🟢',
+        'bardo': '🟩',
+        'odalisca': '🟩',
+        'cavaleiro': '🔴',
+        'templario': '🟥',
+        'bruxo': '🔵',
+        'sabio': '🟦',
+        'ferreiro': '🔵',  # sem emoji customizado no painel
+        'alquimista': '🔵',
+        'assassino': '🟣',
+        'arruaceiro': '🟪'
+    }
 
-    html += "</tbody></table></body></html>"
+    for grupo_id, info in grupos.items():
+        html += f'<div class="card">'
+        html += f'<div class="card-body">'
+        html += f'<h2 class="card-title">PT {info["grupo"]}</h2>'
+        html += '<ul class="jogadores">'
+        if info['jogadores']:
+            for jogador in info['jogadores']:
+                emoji = emojis.get(jogador['classe'].lower(), '❓')
+                nome = jogador['nome']
+                classe = jogador['classe'].capitalize()
+                html += f'<li><span class="emoji">{emoji}</span> {nome} <small style="color:#8b949e;">({classe})</small></li>'
+        else:
+            html += '<li><i>Sem jogadores ainda.</i></li>'
+        html += '</ul></div></div>'
+
+    html += """
+      </div>
+    </body>
+    </html>
+    """
+
     return html
 
-def set_grupos_ativos_ref(func):
+
+def set_grupos_ativos_func(func):
     global get_grupos_ativos
     get_grupos_ativos = func
 
