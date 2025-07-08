@@ -81,6 +81,7 @@ class GrupoView(discord.ui.View):
             btn.callback = self.gerar_callback(classe)
             self.add_item(btn)
 
+        # Botões administrativos
         btn_sair = discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"sair_{grupo_numero}")
         btn_fechar = discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=3, custom_id=f"fechar_{grupo_numero}")
         btn_recriar = discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=3, custom_id=f"recriar_{grupo_numero}")
@@ -297,12 +298,12 @@ async def limpargrupos(ctx):
 async def on_ready():
     logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
 
-keep_alive()
-
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 if not TOKEN:
     logging.error("ERRO: variável de ambiente DISCORD_BOT_TOKEN não encontrada.")
     exit(1)
+
+keep_alive()
 
 async def start_bot():
     retry_delay = 5
