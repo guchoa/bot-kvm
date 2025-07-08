@@ -1,10 +1,10 @@
-from flask import Flask, jsonify
+from flask import Flask
 from threading import Thread
 import os
 
 app = Flask('')
 
-# Essa função vai ser atribuída pelo bot para que Flask consiga acessar os dados
+# Essa função será definida pelo bot
 get_grupos_ativos = None
 
 @app.route('/')
@@ -17,7 +17,7 @@ def painel():
         return "<h1>Erro: dados do bot não disponíveis</h1>", 500
 
     grupos = get_grupos_ativos()
-    # Monta uma tabela simples em HTML com os grupos e jogadores
+
     html = """
     <html lang="pt-br">
     <head>
@@ -46,8 +46,11 @@ def painel():
         html += f"<tr><td>PT {info['grupo']}</td><td>{info['criador_id']}</td><td>{jogadores_html}</td></tr>"
 
     html += "</tbody></table></body></html>"
-
     return html
+
+def set_grupos_ativos_func(func):
+    global get_grupos_ativos
+    get_grupos_ativos = func
 
 def run():
     port = int(os.environ.get('PORT', 8080))
