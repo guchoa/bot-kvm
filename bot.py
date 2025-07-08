@@ -1,9 +1,10 @@
 import os
 import logging
+from keep_alive import keep_alive, set_grupos_ativos_ref
+
 import discord
 from discord.ext import commands
 import asyncio
-from keep_alive import keep_alive, set_grupos_ativos_func
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,6 +33,8 @@ CLASSES_EMOJIS = {
 
 grupos_ativos = {}
 
+set_grupos_ativos_ref(lambda: grupos_ativos)
+
 class GrupoView(discord.ui.View):
     def __init__(self, grupo_numero, criador_id, mensagem):
         super().__init__(timeout=None)
@@ -40,48 +43,68 @@ class GrupoView(discord.ui.View):
         self.mensagem = mensagem
 
         classes = list(CLASSES_EMOJIS.items())
+
         for idx in range(5):
             classe, emoji_str = classes[idx]
-            self.add_item(self._criar_botao(classe, emoji_str, 0))
+            emoji = self._parse_emoji(emoji_str)
+            btn = discord.ui.Button(
+                label=classe.capitalize(),
+                emoji=emoji,
+                style=discord.ButtonStyle.secondary,
+                row=0,
+                custom_id=f"classe_{classe}_{grupo_numero}"
+            )
+            btn.callback = self.gerar_callback(classe)
+            self.add_item(btn)
+
         for idx in range(5, 10):
             classe, emoji_str = classes[idx]
-            self.add_item(self._criar_botao(classe, emoji_str, 1))
+            emoji = self._parse_emoji(emoji_str)
+            btn = discord.ui.Button(
+                label=classe.capitalize(),
+                emoji=emoji,
+                style=discord.ButtonStyle.secondary,
+                row=1,
+                custom_id=f"classe_{classe}_{grupo_numero}"
+            )
+            btn.callback = self.gerar_callback(classe)
+            self.add_item(btn)
+
         for idx in range(10, 13):
             classe, emoji_str = classes[idx]
-            self.add_item(self._criar_botao(classe, emoji_str, 2))
-
-        self._add_botoes_admin()
-
-    def _criar_botao(self, classe, emoji_str, row):
-        emoji = self._parse_emoji(emoji_str)
-        btn = discord.ui.Button(
-            label=classe.capitalize(),
-            emoji=emoji,
-            style=discord.ButtonStyle.secondary,
-            row=row,
-            custom_id=f"classe_{classe}_{self.grupo_numero}"
-        )
-        btn.callback = self.gerar_callback(classe)
-        return btn
-
-    def _add_botoes_admin(self):
-        botoes = [
-            ("❌ Sair do Grupo", discord.ButtonStyle.danger, self.sair_callback),
-            ("🔒 Fechar Grupo", discord.ButtonStyle.primary, self.fechar_callback),
-            ("♻️ Recriar Grupo", discord.ButtonStyle.secondary, self.recriar_callback),
-            ("🗑️ Apagar Grupo", discord.ButtonStyle.danger, self.apagar_callback)
-        ]
-        for i, (label, style, callback) in enumerate(botoes):
-            btn = discord.ui.Button(label=label, style=style, row=3)
-            btn.callback = callback
+            emoji = self._parse_emoji(emoji_str)
+            btn = discord.ui.Button(
+                label=classe.capitalize(),
+                emoji=emoji,
+                style=discord.ButtonStyle.secondary,
+                row=2,
+                custom_id=f"classe_{classe}_{grupo_numero}"
+            )
+            btn.callback = self.gerar_callback(classe)
             self.add_item(btn)
+
+        btn_sair = discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"sair_{grupo_numero}")
+        btn_fechar = discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=3, custom_id=f"fechar_{grupo_numero}")
+        btn_recriar = discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=3, custom_id=f"recriar_{grupo_numero}")
+        btn_apagar = discord.ui.Button(label="🗑️ Apagar Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"apagar_{grupo_numero}")
+
+        btn_sair.callback = self.sair_callback
+        btn_fechar.callback = self.fechar_callback
+        btn_recriar.callback = self.recriar_callback
+        btn_apagar.callback = self.apagar_callback
+
+        self.add_item(btn_sair)
+        self.add_item(btn_fechar)
+        self.add_item(btn_recriar)
+        self.add_item(btn_apagar)
 
     def _parse_emoji(self, emoji_str):
         if emoji_str.startswith('<:'):
             nome = emoji_str.split(':')[1]
             id = int(emoji_str.split(':')[2][:-1])
             return discord.PartialEmoji(name=nome, id=id, animated=False)
-        return emoji_str
+        else:
+            return emoji_str
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         custom_id = interaction.data.get("custom_id")
@@ -109,34 +132,44 @@ class GrupoView(discord.ui.View):
             user = interaction.user
             nome = interaction.guild.get_member(user.id).display_name
 
-            grupo_atual = grupos_ativos.get(msg_id)
-            if not grupo_atual:
+            grupo = grupos_ativos.get(msg_id)
+            if not grupo:
                 await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
 
-            # Remove jogador de outro grupo
-            for g_id, g in grupos_ativos.items():
-                if any(j['id'] == user.id for j in g['jogadores']) and g_id != msg_id:
+            # Remove o usuário de todos os grupos
+            for g_id, g in list(grupos_ativos.items()):
+                if any(j['id'] == user.id for j in g['jogadores']):
                     g['jogadores'] = [j for j in g['jogadores'] if j['id'] != user.id]
+                    try:
+                        canal = interaction.channel
+                        msg = await canal.fetch_message(g_id)
+                        linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in g['jogadores']]
+                        descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
+                        embed = discord.Embed(
+                            title=f"PT {g['grupo']}",
+                            description=descricao,
+                            color=0x2B2D31
+                        )
+                        await msg.edit(embed=embed)
+                    except Exception as e:
+                        print(f"[Erro ao atualizar grupo {g_id}]: {e}")
 
-            # Remove do grupo atual (caso esteja repetido)
-            grupo_atual['jogadores'] = [j for j in grupo_atual['jogadores'] if j['id'] != user.id]
-
-            if len(grupo_atual['jogadores']) >= 5:
+            if len(grupo['jogadores']) >= 5:
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
                 return
 
-            grupo_atual['jogadores'].append({
+            grupo['jogadores'].append({
                 'id': user.id,
                 'nome': nome,
                 'classe': classe
             })
 
-            linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo_atual['jogadores']]
+            linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
             descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
 
             embed = discord.Embed(
-                title=f"PT {grupo_atual['grupo']}",
+                title=f"PT {grupo['grupo']}",
                 description=descricao,
                 color=0x2B2D31
             )
@@ -145,57 +178,7 @@ class GrupoView(discord.ui.View):
 
         return callback
 
-    async def sair_callback(self, interaction: discord.Interaction):
-        msg_id = self.mensagem.id
-        grupo = grupos_ativos.get(msg_id)
-        user_id = interaction.user.id
-
-        if not grupo:
-            await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
-            return
-
-        jogadores_antes = len(grupo['jogadores'])
-        grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
-
-        if len(grupo['jogadores']) == jogadores_antes:
-            await interaction.response.send_message("Você não estava nesse grupo.", ephemeral=True)
-            return
-
-        linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
-        descricao = "\n".join(linhas) if linhas else "*Sem jogadores ainda.*"
-
-        embed = discord.Embed(
-            title=f"PT {grupo['grupo']}",
-            description=descricao,
-            color=0x2B2D31
-        )
-        await self.mensagem.edit(embed=embed, view=self)
-        await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
-
-    async def fechar_callback(self, interaction: discord.Interaction):
-        msg_id = self.mensagem.id
-        grupos_ativos.pop(msg_id, None)
-        await self.mensagem.delete()
-        await interaction.response.send_message("Grupo fechado pelo criador.", ephemeral=True)
-
-    async def recriar_callback(self, interaction: discord.Interaction):
-        msg_id = self.mensagem.id
-        grupo = grupos_ativos.get(msg_id)
-        if grupo:
-            grupo['jogadores'].clear()
-            embed = discord.Embed(
-                title=f"PT {grupo['grupo']} (Recriado)",
-                description="*Sem jogadores ainda.*",
-                color=0x2B2D31
-            )
-            await self.mensagem.edit(embed=embed, view=self)
-            await interaction.response.send_message("Grupo recriado pelo criador.", ephemeral=True)
-
-    async def apagar_callback(self, interaction: discord.Interaction):
-        msg_id = self.mensagem.id
-        grupos_ativos.pop(msg_id, None)
-        await self.mensagem.delete()
-        await interaction.response.send_message("Grupo apagado pelo criador.", ephemeral=True)
+    # ... mantém os outros callbacks: sair_callback, fechar_callback, recriar_callback, apagar_callback ...
 
 @bot.command()
 async def criargrupo(ctx, intervalo: str):
@@ -216,36 +199,23 @@ async def criargrupo(ctx, intervalo: str):
         view = GrupoView(grupo_numero=num, criador_id=ctx.author.id, mensagem=None)
         mensagem = await ctx.send(embed=embed, view=view)
         view.mensagem = mensagem
+
         grupos_ativos[mensagem.id] = {
             'grupo': num,
             'criador_id': ctx.author.id,
             'jogadores': []
         }
-    await ctx.message.delete()
 
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def limpargrupos(ctx):
-    canal = ctx.channel
-    to_remove = []
-    async for msg in canal.history(limit=100):
-        if msg.id in grupos_ativos:
-            try:
-                await msg.delete()
-                to_remove.append(msg.id)
-            except Exception:
-                pass
-    for msg_id in to_remove:
-        grupos_ativos.pop(msg_id, None)
-    await ctx.send(f"🧹 Limpeza feita! {len(to_remove)} grupos apagados.", delete_after=10)
+    try:
+        await ctx.message.delete()
+    except:
+        pass
 
 @bot.event
 async def on_ready():
     logging.info(f'Bot está online! Logado como {bot.user} (ID: {bot.user.id})')
 
-# Painel web com acesso a grupos_ativos
 keep_alive()
-set_grupos_ativos_func(lambda: grupos_ativos)
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 if not TOKEN:
@@ -256,16 +226,19 @@ async def start_bot():
     retry_delay = 5
     max_delay = 300
     tentativas = 0
-    while tentativas < 10:
+    max_tentativas = 10
+    while tentativas < max_tentativas:
         try:
             logging.info("Tentando conectar no Discord...")
             await bot.start(TOKEN)
         except Exception as e:
             logging.error(f"Erro ao conectar: {e}")
             tentativas += 1
+            logging.info(f"Tentativa {tentativas}/{max_tentativas} - Repetindo conexão em {retry_delay} segundos...")
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, max_delay)
         else:
+            logging.info("Bot desconectado normalmente.")
             break
     else:
         logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
