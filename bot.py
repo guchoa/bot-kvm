@@ -1,7 +1,6 @@
 import os
 import logging
 import asyncio
-import time
 import discord
 from discord.ext import commands
 from keep_alive import keep_alive, set_grupos_ativos_func
@@ -51,9 +50,6 @@ class GrupoView(discord.ui.View):
             logging.info(f"GrupoView criado para PT {grupo_numero} com mensagem {mensagem.id}")
 
         classes = list(CLASSES_EMOJIS.items())
-
-        # Cache para cooldown por usuário: {user_id: (classe, timestamp)}
-        self._cooldown_cache = {}
 
         # Botões organizados em 3 linhas: 5 + 5 + 3
         for idx in range(5):
@@ -141,40 +137,15 @@ class GrupoView(discord.ui.View):
 
     def gerar_callback(self, classe):
         async def callback(interaction: discord.Interaction):
-            user_id = interaction.user.id
-            now = time.monotonic()
-
-            # Cooldown simples: 3 segundos por usuário e mesma classe
-            last = self._cooldown_cache.get(user_id)
-            if last:
-                last_classe, last_time = last
-                if last_classe == classe and (now - last_time) < 3:
-                    # Ignora cliques rápidos repetidos para mesma classe
-                    await interaction.response.defer()
-                    return
-            self._cooldown_cache[user_id] = (classe, now)
-
+            await interaction.response.defer(ephemeral=True)
             msg_id = self.mensagem.id
             user = interaction.user
-            nome = interaction.guild.get_member(user.id).display_name if interaction.guild else user.name
+            nome = interaction.guild.get_member(user.id).display_name
 
             grupo = grupos_ativos.get(msg_id)
             if not grupo:
-                await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
+                await interaction.followup.send("Erro: grupo não encontrado.", ephemeral=True)
                 return
-
-            # Desabilita o botão clicado para evitar flood rápido
-            btn_clicado = None
-            for item in self.children:
-                if isinstance(item, discord.ui.Button) and item.custom_id == f"classe_{classe}_{self.grupo_numero}":
-                    btn_clicado = item
-                    break
-            if btn_clicado:
-                btn_clicado.disabled = True
-                try:
-                    await self.mensagem.edit(view=self)
-                except Exception as e:
-                    logging.warning(f"Erro ao desabilitar botão temporariamente: {e}")
 
             # Remove jogador de outros grupos se estiver
             for g_id, g in grupos_ativos.items():
@@ -200,16 +171,10 @@ class GrupoView(discord.ui.View):
 
             # Limite 5 jogadores no grupo, exceto se já estiver nele
             if len(grupo['jogadores']) >= 5 and all(j['id'] != user.id for j in grupo['jogadores']):
-                # Reabilita botão antes de responder
-                if btn_clicado:
-                    btn_clicado.disabled = False
-                    try:
-                        await self.mensagem.edit(view=self)
-                    except Exception as e:
-                        logging.warning(f"Erro ao reabilitar botão: {e}")
-                await interaction.response.send_message("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
+                await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
                 return
 
+            # Atualiza classe se já estiver no grupo
             entrou = False
             for j in grupo['jogadores']:
                 if j['id'] == user.id:
@@ -236,16 +201,7 @@ class GrupoView(discord.ui.View):
                 await self.mensagem.edit(embed=embed, view=self)
             except Exception as e:
                 logging.warning(f"Falha ao editar mensagem no callback da classe: {e}")
-
-            # Reabilita o botão após edição
-            if btn_clicado:
-                btn_clicado.disabled = False
-                try:
-                    await self.mensagem.edit(view=self)
-                except Exception as e:
-                    logging.warning(f"Erro ao reabilitar botão após edição: {e}")
-
-            await interaction.response.send_message(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
+            await interaction.followup.send(f"Você entrou como **{classe.capitalize()}**!", ephemeral=True)
 
         return callback
 
@@ -262,7 +218,7 @@ class GrupoView(discord.ui.View):
         grupo['jogadores'] = [j for j in grupo['jogadores'] if j['id'] != user_id]
 
         if len(grupo['jogadores']) == jogadores_antes:
-            await interaction.response.send_message("Você não está nesse grupo.", ephemeral=True)
+            await interaction.response.send_message("Você não estava nesse grupo.", ephemeral=True)
             return
 
         linhas = [f"{CLASSES_EMOJIS[c['classe']]} {c['nome']}" for c in grupo['jogadores']]
@@ -276,15 +232,189 @@ class GrupoView(discord.ui.View):
         try:
             await self.mensagem.edit(embed=embed, view=self)
         except Exception as e:
-            logging.warning(f"Erro ao atualizar mensagem no sair_callback: {e}")
-
+            logging.warning(f"Falha ao editar mensagem no sair_callback: {e}")
         await interaction.response.send_message("Você saiu do grupo.", ephemeral=True)
 
-    # Seus outros callbacks (fechar_callback, recriar_callback, apagar_callback) seguem aqui, mantidos iguais
+    async def fechar_callback(self, interaction: discord.Interaction):
+        msg_id = self.mensagem.id
+        grupo = grupos_ativos.get(msg_id)
 
-# Continue com seus comandos, eventos e keep_alive
-# ...
+        if not grupo:
+            await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
+            return
 
+        if interaction.user.id != grupo['criador_id']:
+            await interaction.response.send_message("Apenas o criador pode fechar o grupo.", ephemeral=True)
+            return
+
+        for item in self.children:
+            item.disabled = True
+        try:
+            await self.mensagem.edit(view=self)
+        except Exception as e:
+            logging.warning(f"Falha ao editar mensagem no fechar_callback: {e}")
+        await interaction.response.send_message("Grupo fechado. Ninguém mais pode entrar.", ephemeral=True)
+
+    async def recriar_callback(self, interaction: discord.Interaction):
+        msg_id = self.mensagem.id
+        grupo = grupos_ativos.get(msg_id)
+
+        if not grupo:
+            await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
+            return
+
+        if interaction.user.id != grupo['criador_id']:
+            await interaction.response.send_message("Apenas o criador pode recriar o grupo.", ephemeral=True)
+            return
+
+        grupo['jogadores'].clear()
+        for item in self.children:
+            item.disabled = False
+
+        embed = discord.Embed(
+            title=f"PT {grupo['grupo']}",
+            description="*Sem jogadores ainda.*",
+            color=0x2B2D31
+        )
+        try:
+            await self.mensagem.edit(embed=embed, view=self)
+        except Exception as e:
+            logging.warning(f"Falha ao editar mensagem no recriar_callback: {e}")
+        await interaction.response.send_message("Grupo recriado e aberto.", ephemeral=True)
+
+    async def apagar_callback(self, interaction: discord.Interaction):
+        msg_id = self.mensagem.id
+        grupo = grupos_ativos.get(msg_id)
+
+        if not grupo:
+            await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
+            return
+
+        if interaction.user.id != grupo['criador_id']:
+            await interaction.response.send_message("Apenas o criador pode apagar o grupo.", ephemeral=True)
+            return
+
+        canal = bot.get_channel(grupo['canal_id'])
+        if canal:
+            try:
+                await self.mensagem.delete()
+            except Exception as e:
+                logging.warning(f"Falha ao apagar mensagem do grupo: {e}")
+
+        grupos_ativos.pop(msg_id, None)
+        await interaction.response.send_message("Grupo apagado com sucesso.", ephemeral=True)
+
+@bot.command()
+async def criargrupo(ctx, *, arg=None):
+    if not arg:
+        # Se sem argumento, cria 1 grupo no próximo número disponível
+        await criargrupo_unico(ctx, None)
+        return
+
+    try:
+        grupos_para_criar = set()
+
+        partes = [p.strip() for p in arg.split(',')]
+        for parte in partes:
+            if '-' in parte:
+                inicio, fim = parte.split('-')
+                inicio = int(inicio)
+                fim = int(fim)
+                if inicio > fim or inicio < 1 or fim > 20:
+                    await ctx.send(f"Intervalo inválido: {parte}. Use números entre 1 e 20.")
+                    return
+                grupos_para_criar.update(range(inicio, fim + 1))
+            else:
+                num = int(parte)
+                if num < 1 or num > 20:
+                    await ctx.send(f"Número inválido: {num}. Use números entre 1 e 20.")
+                    return
+                grupos_para_criar.add(num)
+
+        grupos_para_criar = sorted(grupos_para_criar)
+
+        for grupo_num in grupos_para_criar:
+            existe = False
+            for g in grupos_ativos.values():
+                if g['canal_id'] == ctx.channel.id and g['grupo'] == grupo_num:
+                    existe = True
+                    await ctx.send(f"Grupo PT {grupo_num} já existe neste canal. Ignorando.")
+                    break
+            if not existe:
+                await criargrupo_unico(ctx, grupo_num)
+                await asyncio.sleep(0.2)  # prevenir flood e problemas de concorrência
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+
+    except Exception as e:
+        await ctx.send(f"Erro no comando: {e}")
+
+async def criargrupo_unico(ctx, grupo_num=None):
+    if grupo_num is None:
+        numeros_existentes = [g['grupo'] for g in grupos_ativos.values() if g['canal_id'] == ctx.channel.id]
+        for i in range(1, 21):
+            if i not in numeros_existentes:
+                grupo_num = i
+                break
+        else:
+            await ctx.send("Limite de 20 grupos atingido neste canal.")
+            return
+
+    embed = discord.Embed(
+        title=f"PT {grupo_num}",
+        description="*Sem jogadores ainda.*",
+        color=0x2B2D31
+    )
+    msg = await ctx.send(embed=embed)
+    view = GrupoView(grupo_num, ctx.author.id, msg)
+    grupos_ativos[msg.id] = {
+        'grupo': grupo_num,
+        'criador_id': ctx.author.id,
+        'jogadores': [],
+        'canal_id': ctx.channel.id
+    }
+    try:
+        await msg.edit(view=view)
+    except Exception as e:
+        logging.warning(f"Falha ao editar mensagem após criação do grupo {grupo_num}: {e}")
+
+@bot.command()
+async def limpargrupos(ctx):
+    grupos_para_remover = [msg_id for msg_id, g in grupos_ativos.items() if g['canal_id'] == ctx.channel.id]
+    for msg_id in grupos_para_remover:
+        try:
+            msg = await ctx.channel.fetch_message(msg_id)
+            await msg.delete()
+        except:
+            pass
+        grupos_ativos.pop(msg_id, None)
+    await ctx.send("Todos os grupos deste canal foram apagados.", delete_after=10)
+
+set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
-set_grupos_ativos_func(lambda g: grupos_ativos.update(g))
-bot.run(TOKEN)
+
+async def start_bot():
+    retry_delay = 5
+    max_delay = 300
+    attempts = 0
+    max_attempts = 10
+    while attempts < max_attempts:
+        try:
+            logging.info("Tentando conectar no Discord...")
+            await bot.start(TOKEN)
+        except Exception as e:
+            logging.error(f"Erro ao conectar: {e}")
+            attempts += 1
+            logging.info(f"Tentativa {attempts}/{max_attempts} - Tentando reconectar em {retry_delay} segundos...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, max_delay)
+        else:
+            logging.info("Bot desconectado normalmente.")
+            break
+    else:
+        logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
+
+if __name__ == "__main__":
+    asyncio.run(start_bot())
