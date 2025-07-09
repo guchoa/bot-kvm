@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from threading import Thread
 import os
 
@@ -281,6 +281,13 @@ def painel():
 </html>
     """
     return html
+
+@app.route('/grupos_ativos')
+def grupos_ativos_api():
+    if get_grupos_ativos is None:
+        return jsonify({}), 500
+    grupos = get_grupos_ativos()
+    return jsonify(grupos)
 
 def set_grupos_ativos_func(func):
     global get_grupos_ativos
