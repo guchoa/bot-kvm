@@ -469,19 +469,22 @@ async def criargrupo_unico(ctx, grupo_num=None):
 
 @bot.command()
 @commands.has_permissions(manage_messages=True)
-async def limpargrupos(ctx):
-    grupos_para_remover = [msg_id for msg_id, g in grupos_ativos.items() if g['canal_id'] == ctx.channel.id]
-    for msg_id in grupos_para_remover:
-        try:
-            msg = await ctx.channel.fetch_message(msg_id)
-            await msg.delete()
-        except:
-            pass
-        grupos_ativos.pop(msg_id, None)
-    await ctx.send("Todos os grupos deste canal foram apagados.", delete_after=10)
+async def limpar(ctx):
+    """Apaga todas as mensagens do bot no canal e limpa grupos_ativos."""
+    await ctx.send("Iniciando limpeza completa das mensagens do bot neste canal...")
+    count = 0
+    async for msg in ctx.channel.history(limit=500):
+        if msg.author.id == bot.user.id:
+            try:
+                await msg.delete()
+                count += 1
+            except Exception as e:
+                logging.warning(f"Erro ao apagar mensagem {msg.id}: {e}")
+    grupos_ativos.clear()
+    await ctx.send(f"Limpeza completa feita! {count} mensagens apagadas e grupos removidos da memória.", delete_after=15)
 
-@limpargrupos.error
-async def limpargrupos_error(ctx, error):
+@limpar.error
+async def limpar_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("Você precisa da permissão de Gerenciar Mensagens para usar este comando.", delete_after=10)
 
