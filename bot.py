@@ -44,11 +44,6 @@ class GrupoView(discord.ui.View):
         self.criador_id = criador_id
         self.mensagem = mensagem
 
-        if not mensagem:
-            logging.warning(f"GrupoView criado sem mensagem para PT {grupo_numero}")
-        else:
-            logging.info(f"GrupoView criado para PT {grupo_numero} com mensagem {mensagem.id}")
-
         classes = list(CLASSES_EMOJIS.items())
 
         # Botões organizados em 3 linhas: 5 + 5 + 3
@@ -125,7 +120,6 @@ class GrupoView(discord.ui.View):
             await interaction.response.send_message("Erro: grupo não encontrado.", ephemeral=True)
             return False
 
-        # Todos podem usar os botões de classe e sair, só criador pode os outros
         if any(custom_id.startswith(prefix) for prefix in ["classe_", "sair_"]):
             return True
 
@@ -169,12 +163,10 @@ class GrupoView(discord.ui.View):
                             except Exception as e:
                                 logging.warning(f"Erro ao atualizar mensagem antiga: {e}")
 
-            # Limite 5 jogadores no grupo, exceto se já estiver nele
             if len(grupo['jogadores']) >= 5 and all(j['id'] != user.id for j in grupo['jogadores']):
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
                 return
 
-            # Atualiza classe se já estiver no grupo
             entrou = False
             for j in grupo['jogadores']:
                 if j['id'] == user.id:
@@ -306,14 +298,15 @@ class GrupoView(discord.ui.View):
 
 @bot.command()
 async def criargrupo(ctx, *, arg=None):
+    # Sincroniza grupos_ativos limpando grupos fantasmas
+    await sincronizar_grupos(ctx.channel.id)
+
     if not arg:
-        # Se sem argumento, cria 1 grupo no próximo número disponível
         await criargrupo_unico(ctx, None)
         return
 
     try:
         grupos_para_criar = set()
-
         partes = [p.strip() for p in arg.split(',')]
         for parte in partes:
             if '-' in parte:
@@ -334,7 +327,6 @@ async def criargrupo(ctx, *, arg=None):
         grupos_para_criar = sorted(grupos_para_criar)
 
         for grupo_num in grupos_para_criar:
-            # Já existe grupo? Já ignorar.
             existe = False
             for g in grupos_ativos.values():
                 if g['canal_id'] == ctx.channel.id and g['grupo'] == grupo_num:
@@ -343,7 +335,7 @@ async def criargrupo(ctx, *, arg=None):
                     break
             if not existe:
                 await criargrupo_unico(ctx, grupo_num)
-                await asyncio.sleep(0.2)  # prevenir flood e problemas de concorrência
+                await asyncio.sleep(0.2)
 
         try:
             await ctx.message.delete()
@@ -354,10 +346,9 @@ async def criargrupo(ctx, *, arg=None):
         await ctx.send(f"Erro no comando: {e}")
 
 async def criargrupo_unico(ctx, grupo_num=None):
-    # Log dos grupos ativos para debug
     logging.info(f"Grupos ativos antes de criar: {[ (g['grupo'], g['canal_id']) for g in grupos_ativos.values()]}")
+    await sincronizar_grupos(ctx.channel.id)
 
-    # Checa se o grupo já existe para o canal antes de criar
     for g in grupos_ativos.values():
         if g['canal_id'] == ctx.channel.id and g['grupo'] == grupo_num:
             await ctx.send(f"Grupo PT {grupo_num} já existe neste canal. Ignorando criação.")
@@ -399,8 +390,8 @@ async def limpargrupos(ctx):
         try:
             msg = await ctx.channel.fetch_message(msg_id)
             await msg.delete()
-        except:
-            pass
+        except Exception as e:
+            logging.warning(f"Não foi possível deletar mensagem {msg_id}: {e}")
         grupos_ativos.pop(msg_id, None)
     await ctx.send("Todos os grupos deste canal foram apagados.", delete_after=10)
 
@@ -409,10 +400,21 @@ async def limpargrupos_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("Você precisa da permissão de Gerenciar Mensagens para usar este comando.", delete_after=10)
 
+async def sincronizar_grupos(canal_id):
+    msg_ids = [msg_id for msg_id, g in grupos_ativos.items() if g['canal_id'] == canal_id]
+    for msg_id in msg_ids:
+        try:
+            channel = bot.get_channel(canal_id)
+            if channel is None:
+                logging.warning(f"Canal {canal_id} não encontrado na sincronização.")
+                return
+            await channel.fetch_message(msg_id)
+        except discord.NotFound:
+            grupos_ativos.pop(msg_id, None)
+            logging.info(f"Removido grupo fantasma com mensagem ID {msg_id} do canal {canal_id}")
+
 set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
-
-import asyncio
 
 async def start_bot():
     retry_delay = 5
@@ -436,5 +438,4 @@ async def start_bot():
         logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
 
 if __name__ == "__main__":
-    # O Flask já foi iniciado numa thread da parte anterior
     asyncio.run(start_bot())
