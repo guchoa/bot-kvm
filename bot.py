@@ -381,6 +381,7 @@ async def criargrupo_unico(ctx, grupo_num=None):
         logging.warning(f"Falha ao editar mensagem após criação do grupo {grupo_num}: {e}")
 
 @bot.command()
+@commands.has_permissions(manage_messages=True)
 async def limpargrupos(ctx):
     grupos_para_remover = [msg_id for msg_id, g in grupos_ativos.items() if g['canal_id'] == ctx.channel.id]
     for msg_id in grupos_para_remover:
@@ -391,6 +392,11 @@ async def limpargrupos(ctx):
             pass
         grupos_ativos.pop(msg_id, None)
     await ctx.send("Todos os grupos deste canal foram apagados.", delete_after=10)
+
+@limpargrupos.error
+async def limpargrupos_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("Você precisa da permissão de Gerenciar Mensagens para usar este comando.", delete_after=10)
 
 set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
