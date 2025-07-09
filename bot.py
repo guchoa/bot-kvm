@@ -16,6 +16,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.presences = True
+intents.guilds = True  # importante para listar guilds e canais
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -51,7 +52,6 @@ class GrupoView(discord.ui.View):
 
         classes = list(CLASSES_EMOJIS.items())
 
-        # Botões organizados em 3 linhas: 5 + 5 + 3
         for idx in range(5):
             classe, emoji_str = classes[idx]
             emoji = self._parse_emoji(emoji_str)
@@ -91,7 +91,6 @@ class GrupoView(discord.ui.View):
             btn.callback = self.gerar_callback(classe)
             self.add_item(btn)
 
-        # Botões extras na linha 3
         btn_sair = discord.ui.Button(label="❌ Sair do Grupo", style=discord.ButtonStyle.danger, row=3, custom_id=f"sair_{grupo_numero}")
         btn_fechar = discord.ui.Button(label="🔒 Fechar Grupo", style=discord.ButtonStyle.primary, row=3, custom_id=f"fechar_{grupo_numero}")
         btn_recriar = discord.ui.Button(label="♻️ Recriar Grupo", style=discord.ButtonStyle.secondary, row=3, custom_id=f"recriar_{grupo_numero}")
@@ -168,12 +167,10 @@ class GrupoView(discord.ui.View):
                             except Exception as e:
                                 logging.warning(f"Erro ao atualizar mensagem antiga: {e}")
 
-            # Limite 5 jogadores no grupo, exceto se já estiver nele
             if len(grupo['jogadores']) >= 5 and all(j['id'] != user.id for j in grupo['jogadores']):
                 await interaction.followup.send("Este grupo já atingiu o limite de 5 jogadores.", ephemeral=True)
                 return
 
-            # Atualiza classe se já estiver no grupo
             entrou = False
             for j in grupo['jogadores']:
                 if j['id'] == user.id:
@@ -303,7 +300,68 @@ class GrupoView(discord.ui.View):
         grupos_ativos.pop(msg_id, None)
         await interaction.response.send_message("Grupo apagado com sucesso.", ephemeral=True)
 
+
+async def sincronizar_todos_grupos():
+    logging.info("Iniciando sincronização geral dos grupos ativos...")
+    grupos_ativos.clear()
+
+    for guild in bot.guilds:
+        logging.info(f"Verificando guild: {guild.name} ({guild.id})")
+
+        for channel in guild.text_channels:
+            if not channel.permissions_for(guild.me).read_messages:
+                continue
+
+            try:
+                mensagens = await channel.history(limit=100).flatten()
+            except Exception as e:
+                logging.warning(f"Erro ao ler mensagens do canal {channel.name}: {e}")
+                continue
+
+            for msg in mensagens:
+                if msg.author.id != bot.user.id:
+                    continue
+
+                if msg.embeds:
+                    embed = msg.embeds[0]
+                    titulo = embed.title or ""
+                    if titulo.startswith("PT "):
+                        try:
+                            numero = int(titulo[3:])
+                        except:
+                            continue
+
+                        grupos_ativos[msg.id] = {
+                            'grupo': numero,
+                            'criador_id': msg.author.id,
+                            'jogadores': [],  # Jogadores não conseguimos recuperar do embed
+                            'canal_id': channel.id
+                        }
+    logging.info(f"Sincronização finalizada: {len(grupos_ativos)} grupos ativos encontrados.")
+
+
+@bot.event
+async def on_ready():
+    logging.info(f"Bot conectado como {bot.user} (ID: {bot.user.id})")
+    await sincronizar_todos_grupos()
+    logging.info("Bot pronto!")
+
+
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def sincronizar(ctx):
+    await ctx.send("Sincronizando grupos ativos... Isso pode levar alguns segundos.")
+    await sincronizar_todos_grupos()
+    await ctx.send(f"Sincronização concluída! Agora há {len(grupos_ativos)} grupos ativos na memória.", delete_after=10)
+
+@sincronizar.error
+async def sincronizar_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("Você precisa da permissão Gerenciar Mensagens para usar este comando.", delete_after=10)
+
+
 async def sincronizar_grupos(canal_id):
+    # Limpa grupos que não existem mais no canal
     msg_ids = list(grupos_ativos.keys())
     channel = bot.get_channel(canal_id)
     if not channel:
@@ -318,6 +376,7 @@ async def sincronizar_grupos(canal_id):
             except discord.NotFound:
                 logging.info(f"Mensagem {msg_id} não encontrada, removendo grupo fantasma.")
                 grupos_ativos.pop(msg_id, None)
+
 
 @bot.command()
 async def criargrupo(ctx, *, arg=None):
@@ -368,6 +427,7 @@ async def criargrupo(ctx, *, arg=None):
     except Exception as e:
         await ctx.send(f"Erro no comando: {e}")
 
+
 async def criargrupo_unico(ctx, grupo_num=None):
     await sincronizar_grupos(ctx.channel.id)
 
@@ -406,6 +466,7 @@ async def criargrupo_unico(ctx, grupo_num=None):
     except Exception as e:
         logging.warning(f"Falha ao editar mensagem após criação do grupo {grupo_num}: {e}")
 
+
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def limpargrupos(ctx):
@@ -423,6 +484,7 @@ async def limpargrupos(ctx):
 async def limpargrupos_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("Você precisa da permissão de Gerenciar Mensagens para usar este comando.", delete_after=10)
+
 
 set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
