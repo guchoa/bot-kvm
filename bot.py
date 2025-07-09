@@ -412,6 +412,8 @@ async def limpargrupos_error(ctx, error):
 set_grupos_ativos_func(lambda: grupos_ativos)
 keep_alive()
 
+import asyncio
+
 async def start_bot():
     retry_delay = 5
     max_delay = 300
@@ -434,4 +436,5 @@ async def start_bot():
         logging.error("Número máximo de tentativas atingido. Encerrando o bot.")
 
 if __name__ == "__main__":
+    # O Flask já foi iniciado numa thread da parte anterior
     asyncio.run(start_bot())
