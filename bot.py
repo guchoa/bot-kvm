@@ -334,6 +334,7 @@ async def criargrupo(ctx, *, arg=None):
         grupos_para_criar = sorted(grupos_para_criar)
 
         for grupo_num in grupos_para_criar:
+            # Já existe grupo? Já ignorar.
             existe = False
             for g in grupos_ativos.values():
                 if g['canal_id'] == ctx.channel.id and g['grupo'] == grupo_num:
@@ -343,6 +344,7 @@ async def criargrupo(ctx, *, arg=None):
             if not existe:
                 await criargrupo_unico(ctx, grupo_num)
                 await asyncio.sleep(0.2)  # prevenir flood e problemas de concorrência
+
         try:
             await ctx.message.delete()
         except:
@@ -352,6 +354,15 @@ async def criargrupo(ctx, *, arg=None):
         await ctx.send(f"Erro no comando: {e}")
 
 async def criargrupo_unico(ctx, grupo_num=None):
+    # Log dos grupos ativos para debug
+    logging.info(f"Grupos ativos antes de criar: {[ (g['grupo'], g['canal_id']) for g in grupos_ativos.values()]}")
+
+    # Checa se o grupo já existe para o canal antes de criar
+    for g in grupos_ativos.values():
+        if g['canal_id'] == ctx.channel.id and g['grupo'] == grupo_num:
+            await ctx.send(f"Grupo PT {grupo_num} já existe neste canal. Ignorando criação.")
+            return
+
     if grupo_num is None:
         numeros_existentes = [g['grupo'] for g in grupos_ativos.values() if g['canal_id'] == ctx.channel.id]
         for i in range(1, 21):
