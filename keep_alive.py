@@ -294,7 +294,7 @@ def set_grupos_ativos_func(func):
     get_grupos_ativos = func
 
 def run():
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ['PORT'])
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
